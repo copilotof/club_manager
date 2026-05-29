@@ -10,6 +10,7 @@ import '../bloc/student/states/student_state.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
 import 'add_edit_student_screen.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   final int studentId;
@@ -30,7 +31,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   void initState() {
     super.initState();
     _studentBloc = StudentBloc(getIt());
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _studentBloc.add(LoadStudentsEvent());
   }
 
@@ -83,7 +84,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               const SizedBox(height: 16),
               Text(
                 _student!.fullName,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -113,7 +117,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       value: _studentBloc,
       child: Scaffold(
         appBar: AppBar(
-          title: _student != null ? Text(_student!.fullName) : const Text('ملف الطالب'),
+          title: _student != null
+              ? Text(_student!.fullName)
+              : const Text('ملف الطالب'),
           actions: [
             IconButton(
               icon: const Icon(Icons.qr_code),
@@ -135,6 +141,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               Tab(text: 'معلومات صحية', icon: Icon(Icons.health_and_safety)),
               Tab(text: 'السجل الرياضي', icon: Icon(Icons.emoji_events)),
               Tab(text: 'المدفوعات', icon: Icon(Icons.payments)),
+              Tab(text: '📊 إحصائيات', icon: Icon(Icons.bar_chart)),
             ],
           ),
         ),
@@ -152,9 +159,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               });
             }
             if (state is StudentError && mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.message)),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(state.message)));
             }
           },
           child: BlocBuilder<StudentBloc, StudentState>(
@@ -162,7 +169,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               if (_isLoading && state is! StudentsLoaded) {
                 return const Center(child: CircularProgressIndicator());
               }
-              
+
               if (_student == null && state is StudentsLoaded) {
                 final found = state.students.firstWhere(
                   (s) => s.id == widget.studentId,
@@ -171,11 +178,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 _student = found;
                 _isLoading = false;
               }
-              
+
               if (_student == null) {
                 return const Center(child: Text('الطالب غير موجود'));
               }
-              
+
               return TabBarView(
                 controller: _tabController,
                 children: [
@@ -184,6 +191,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   _buildHealthInfoTab(isMobile),
                   _buildSportsRecordTab(isMobile),
                   _buildPaymentsTab(isMobile),
+                  _buildStatisticsTab(isMobile),
                 ],
               );
             },
@@ -195,7 +203,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
   // باقي الدوال (_buildPersonalInfoTab, _buildAcademicInfoTab, إلخ)
   // تبقى كما هي دون تغيير
-  
+
   Widget _buildPersonalInfoTab(bool isMobile) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isMobile ? 16 : 24),
@@ -208,7 +216,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             children: [
               _buildInfoRow('الاسم الكامل', _student!.fullName),
               _buildDivider(),
-              _buildInfoRow('الجنس', _student!.gender == 'ذكر' ? '♂ ذكر' : '♀ أنثى'),
+              _buildInfoRow(
+                'الجنس',
+                _student!.gender == 'ذكر' ? '♂ ذكر' : '♀ أنثى',
+              ),
               _buildDivider(),
               _buildInfoRow('تاريخ الميلاد', _formatDate(_student!.birthDate)),
               _buildDivider(),
@@ -220,7 +231,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             title: 'معلومات الاتصال',
             icon: Icons.contact_phone,
             children: [
-              _buildInfoRow('رقم ولي الأمر', _student!.parentPhone ?? 'غير مسجل'),
+              _buildInfoRow(
+                'رقم ولي الأمر',
+                _student!.parentPhone ?? 'غير مسجل',
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -228,7 +242,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             title: 'معلومات التسجيل',
             icon: Icons.calendar_today,
             children: [
-              _buildInfoRow('تاريخ التسجيل', _formatDate(_student!.enrollmentDate)),
+              _buildInfoRow(
+                'تاريخ التسجيل',
+                _formatDate(_student!.enrollmentDate),
+              ),
               _buildDivider(),
               _buildInfoRow('رقم التسجيل', '#${_student!.id}'),
             ],
@@ -248,16 +265,27 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             title: 'المعدلات الدراسية',
             icon: Icons.grade,
             children: [
-              _buildInfoRow('معدل الفصل الأول', _student!.semester1Grade?.toString() ?? 'لم يسجل بعد'),
+              _buildInfoRow(
+                'معدل الفصل الأول',
+                _student!.semester1Grade?.toString() ?? 'لم يسجل بعد',
+              ),
               _buildDivider(),
-              _buildInfoRow('معدل الفصل الثاني', _student!.semester2Grade?.toString() ?? 'لم يسجل بعد'),
+              _buildInfoRow(
+                'معدل الفصل الثاني',
+                _student!.semester2Grade?.toString() ?? 'لم يسجل بعد',
+              ),
               _buildDivider(),
-              _buildInfoRow('معدل الفصل الثالث', _student!.semester3Grade?.toString() ?? 'لم يسجل بعد'),
+              _buildInfoRow(
+                'معدل الفصل الثالث',
+                _student!.semester3Grade?.toString() ?? 'لم يسجل بعد',
+              ),
             ],
           ),
-          if (_student!.academicNotes != null && _student!.academicNotes!.isNotEmpty)
+          if (_student!.academicNotes != null &&
+              _student!.academicNotes!.isNotEmpty)
             const SizedBox(height: 16),
-          if (_student!.academicNotes != null && _student!.academicNotes!.isNotEmpty)
+          if (_student!.academicNotes != null &&
+              _student!.academicNotes!.isNotEmpty)
             _buildInfoCard(
               title: 'ملاحظات المدرب',
               icon: Icons.note,
@@ -286,7 +314,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             title: 'الحالة الصحية',
             icon: Icons.health_and_safety,
             children: [
-              _buildInfoRow('مرض مزمن', _student!.hasChronicDisease ? 'نعم' : 'لا'),
+              _buildInfoRow(
+                'مرض مزمن',
+                _student!.hasChronicDisease ? 'نعم' : 'لا',
+              ),
               if (_student!.hasChronicDisease) ...[
                 _buildDivider(),
                 _buildInfoRow('نوع المرض', _student!.diseaseName ?? 'غير محدد'),
@@ -310,7 +341,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               children: [
                 if (_student!.doctorName != null)
                   _buildInfoRow('الطبيب المعالج', _student!.doctorName!),
-                if (_student!.doctorName != null && _student!.emergencyPhone != null)
+                if (_student!.doctorName != null &&
+                    _student!.emergencyPhone != null)
                   _buildDivider(),
                 if (_student!.emergencyPhone != null)
                   _buildInfoRow('رقم الطوارئ', _student!.emergencyPhone!),
@@ -422,11 +454,237 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
+  Widget _buildStatisticsTab(bool isMobile) {
+    final attendancePercentage = _getAttendancePercentage();
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // نسبة الحضور الإجمالية
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Text(
+                    'نسبة الحضور الكلية',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        height: 120,
+                        width: 120,
+                        child: CircularProgressIndicator(
+                          value: attendancePercentage / 100,
+                          strokeWidth: 12,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFE53935),
+                          ),
+                        ),
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            '${attendancePercentage.toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE53935),
+                            ),
+                          ),
+                          const Text('حضور', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // الرسم البياني للحضور الأسبوعي
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'الحضور الأسبوعي',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 200,
+                    child: BarChart(
+                      BarChartData(
+                        alignment: BarChartAlignment.spaceAround,
+                        maxY: 7,
+                        titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 30,
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                const weeks = [
+                                  'أسبوع 1',
+                                  'أسبوع 2',
+                                  'أسبوع 3',
+                                  'أسبوع 4',
+                                ];
+                                if (value.toInt() >= 0 &&
+                                    value.toInt() < weeks.length) {
+                                  return Text(
+                                    weeks[value.toInt()],
+                                    style: const TextStyle(fontSize: 10),
+                                  );
+                                }
+                                return const Text('');
+                              },
+                              reservedSize: 40,
+                            ),
+                          ),
+                        ),
+                        barGroups: _getAttendanceStats().entries.map((entry) {
+                          final index = _getAttendanceStats().keys
+                              .toList()
+                              .indexOf(entry.key);
+                          return BarChartGroupData(
+                            x: index,
+                            barRods: [
+                              BarChartRodData(
+                                toY: entry.value.toDouble(),
+                                color: const Color(0xFFE53935),
+                                width: 30,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // مؤشر التزام الدفع
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'الالتزام المالي',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'المدفوع',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '85%',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'المتبقي',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '15%',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: 0.85,
+                    backgroundColor: Colors.grey[200],
+                    color: Colors.green,
+                    minHeight: 10,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDivider() {
     return const Divider(height: 1, indent: 16, endIndent: 16);
   }
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  // إحصائيات الحضور التجريبية (لاحقاً ستجلب من قاعدة البيانات)
+  Map<String, int> _getAttendanceStats() {
+    // هذه بيانات تجريبية
+    return {'أسبوع 1': 5, 'أسبوع 2': 4, 'أسبوع 3': 6, 'أسبوع 4': 5};
+  }
+
+  double _getAttendancePercentage() {
+    final stats = _getAttendanceStats();
+    final total = stats.values.fold(0, (sum, v) => sum + v);
+    final maxPossible = stats.length * 6; // 6 حصص في الأسبوع
+    if (maxPossible == 0) return 0;
+    return (total / maxPossible) * 100;
   }
 }

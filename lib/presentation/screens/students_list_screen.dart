@@ -1,4 +1,5 @@
 // lib/presentation/screens/students_list_screen.dart
+import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -40,9 +41,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
   void _editStudent(StudentModel student) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AddEditStudentScreen(student: student),
-      ),
+      MaterialPageRoute(builder: (_) => AddEditStudentScreen(student: student)),
     );
     if (result == true && mounted) {
       _studentBloc.add(LoadStudentsEvent());
@@ -91,8 +90,11 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
       ),
       body: Column(
         children: [
+          // 🔍 شريط البحث
           Padding(
-            padding: EdgeInsets.all(ResponsiveUtils.responsiveSpacing(context, spacing: 12)),
+            padding: EdgeInsets.all(
+              ResponsiveUtils.responsiveSpacing(context, spacing: 12),
+            ),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -107,7 +109,9 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                         },
                       )
                     : null,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onChanged: (value) {
                 if (value.isEmpty) {
@@ -118,51 +122,112 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
               },
             ),
           ),
+
           Expanded(
             child: BlocConsumer<StudentBloc, StudentState>(
               bloc: _studentBloc,
               listener: (context, state) {
                 if (state is StudentError) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(state.message)),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(state.message)));
                 }
                 if (state is StudentOperationSuccess) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(state.message)),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(state.message)));
                 }
               },
               builder: (context, state) {
                 if (state is StudentLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                
+
                 if (state is StudentsLoaded) {
                   if (state.students.isEmpty) {
-                    // ✅ قائمة فارغة بدون زر إضافة مكرر
                     return Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.people_outline, size: 80, color: Colors.grey[400]),
+                          Icon(
+                            Icons.people_outline,
+                            size: 80,
+                            color: Colors.grey[400],
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             'لا يوجد طلبة',
-                            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         ],
                       ),
                     );
                   }
-                  
-                  return ResponsiveLayout(
-                    mobileLayout: _buildMobileList(state.students),
-                    tabletLayout: _buildTabletList(state.students),
-                    desktopLayout: _buildDesktopList(state.students),
+
+                  // ✅ هنا تم دمج الإحصائيات بشكل ديناميكي وصحيح بناءً على حالة الـ Bloc
+                  return Column(
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildStatItem(
+                              Icons.people,
+                              '${state.students.length}',
+                              'إجمالي الطلبة',
+                            ),
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                            _buildStatItem(
+                              Icons.cake,
+                              _calculateAverageAge(state.students),
+                              'متوسط العمر',
+                            ),
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                            _buildStatItem(
+                              Icons.wc,
+                              _countGenders(state.students),
+                              'ذكور / إناث',
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // عرض القوائم المتجاوبة تحت الإحصائيات
+                      Expanded(
+                        child: ResponsiveLayout(
+                          mobileLayout: _buildMobileList(state.students),
+                          tabletLayout: _buildTabletList(state.students),
+                          desktopLayout: _buildDesktopList(state.students),
+                        ),
+                      ),
+                    ],
                   );
                 }
-                
+
                 return const SizedBox.shrink();
               },
             ),
@@ -184,6 +249,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     );
   }
 
+  // ✅ تم تمرير الـ index من الـ Builder إلى الدالة بالأسفل
   Widget _buildMobileList(List<StudentModel> students) {
     return ListView.builder(
       padding: EdgeInsets.symmetric(
@@ -192,14 +258,17 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
       itemCount: students.length,
       itemBuilder: (context, index) {
         final student = students[index];
-        return _buildStudentCard(student);
+        return _buildStudentCard(student, index);
       },
     );
   }
 
+  // ✅ تم تمرير الـ index هنا أيضاً
   Widget _buildTabletList(List<StudentModel> students) {
     return GridView.builder(
-      padding: EdgeInsets.all(ResponsiveUtils.responsiveSpacing(context, spacing: 16)),
+      padding: EdgeInsets.all(
+        ResponsiveUtils.responsiveSpacing(context, spacing: 16),
+      ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         childAspectRatio: 1.5,
@@ -209,11 +278,12 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
       itemCount: students.length,
       itemBuilder: (context, index) {
         final student = students[index];
-        return _buildStudentCard(student);
+        return _buildStudentCard(student, index);
       },
     );
   }
 
+  // ✅ تم تمرير الـ index هنا أيضاً
   Widget _buildDesktopList(List<StudentModel> students) {
     return GridView.builder(
       padding: const EdgeInsets.all(24),
@@ -226,117 +296,117 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
       itemCount: students.length,
       itemBuilder: (context, index) {
         final student = students[index];
-        return _buildStudentCard(student);
+        return _buildStudentCard(student, index);
       },
     );
   }
 
-  Widget _buildStudentCard(StudentModel student) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: () {
-          context.push('/student/${student.id}');
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: const Color(0xFFE53935).withOpacity(0.1),
-                    child: Text(
-                      student.firstName[0],
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFE53935),
+  // ✅ استقبال الـ index كمعامل ثاني لمعادلة الـ Duration
+  Widget _buildStudentCard(StudentModel student, int index) {
+    return FadeInUp(
+      duration: Duration(milliseconds: 300 + (index * 50)),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: InkWell(
+          onTap: () {
+            context.push('/student/${student.id}');
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: const Color(0xFFE53935).withOpacity(0.1),
+                      child: Text(
+                        student.firstName.isNotEmpty
+                            ? student.firstName[0]
+                            : '?',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFE53935),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          student.fullName,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            student.fullName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'العمر: ${student.age} سنة',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    PopupMenuButton(
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 20),
+                              SizedBox(width: 8),
+                              Text('Tعديل'),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'العمر: ${student.age} سنة',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, size: 20, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('حذف', style: TextStyle(color: Colors.red)),
+                            ],
                           ),
                         ),
                       ],
+                      onSelected: (value) {
+                        if (value == 'delete') {
+                          _showDeleteDialog(student.id!);
+                        } else if (value == 'edit') {
+                          _editStudent(student);
+                        }
+                      },
                     ),
-                  ),
-                  PopupMenuButton(
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit, size: 20),
-                            SizedBox(width: 8),
-                            Text('تعديل'),
-                          ],
-                        ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildInfoChip(
+                        Icons.phone,
+                        student.parentPhone ?? 'رقم غير مسجل',
                       ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete, size: 20, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('حذف', style: TextStyle(color: Colors.red)),
-                          ],
-                        ),
-                      ),
-                    ],
-                    onSelected: (value) {
-                      if (value == 'delete') {
-                        _showDeleteDialog(student.id!);
-                      } else if (value == 'edit') {
-                        // ✅ تعديل: استدعاء دالة التعديل
-                        _editStudent(student);
-                      }
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoChip(
-                      Icons.phone,
-                      student.parentPhone ?? 'رقم غير مسجل',
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildInfoChip(
-                      Icons.cake,
-                      '${student.age} سنة',
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildInfoChip(Icons.cake, '${student.age} سنة'),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -365,5 +435,53 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         ],
       ),
     );
+  }
+
+  // ==========================================
+  // 🛠️ الدوال الإضافية الخاصة بالإحصائيات
+  // ==========================================
+
+  Widget _buildStatItem(IconData icon, String value, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.white, size: 24),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  String _calculateAverageAge(List<StudentModel> students) {
+    if (students.isEmpty) return '0';
+    final totalAge = students.fold<int>(0, (sum, student) => sum + student.age);
+    return (totalAge / students.length).toStringAsFixed(1);
+  }
+
+  String _countGenders(List<StudentModel> students) {
+    try {
+      int males = students
+          .where(
+            (s) =>
+                (s as dynamic).gender == 'male' ||
+                (s as dynamic).gender == 'ذكر',
+          )
+          .length;
+      int females = students.length - males;
+      return '$males / $females';
+    } catch (_) {
+      return '- / -';
+    }
   }
 }

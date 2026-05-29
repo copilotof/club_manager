@@ -2,6 +2,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/widgets/custom_snackbar.dart';
 import '../../data/models/student_model.dart';
 import '../bloc/student/student_bloc.dart';
 import '../bloc/student/events/student_event.dart';
@@ -88,7 +89,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   // ✅ دالة اختيار التاريخ المحسنة (تقبل تواريخ من 1950)
   Future<void> _selectDate(BuildContext context) async {
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -98,7 +99,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
             mode: CupertinoDatePickerMode.date,
             initialDateTime: _selectedDate ?? DateTime(2000, 1, 1),
             maximumDate: DateTime.now(),
-            minimumDate: DateTime(1950, 1, 1),  // ✅ من 1950 وليس 2000
+            minimumDate: DateTime(1950, 1, 1), // ✅ من 1950 وليس 2000
             onDateTimeChanged: (DateTime newDate) {
               setState(() {
                 _selectedDate = newDate;
@@ -115,7 +116,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   void _saveStudent() async {
     // منع الضغط إذا كان جاري الحفظ
     if (_isSaving) return;
-    
+
     // التحقق من الحقول الأساسية
     if (_firstNameController.text.isEmpty) {
       _showError('الاسم الأول مطلوب');
@@ -141,20 +142,40 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
       lastName: _lastNameController.text,
       birthDate: _selectedDate!,
       gender: _gender,
-      parentPhone: _parentPhoneController.text.isEmpty ? null : _parentPhoneController.text,
+      parentPhone: _parentPhoneController.text.isEmpty
+          ? null
+          : _parentPhoneController.text,
       enrollmentDate: widget.student?.enrollmentDate ?? DateTime.now(),
       hallId: 1,
       groupId: 1,
-      semester1Grade: _semester1Controller.text.isEmpty ? null : double.tryParse(_semester1Controller.text),
-      semester2Grade: _semester2Controller.text.isEmpty ? null : double.tryParse(_semester2Controller.text),
-      semester3Grade: _semester3Controller.text.isEmpty ? null : double.tryParse(_semester3Controller.text),
-      academicNotes: _academicNotesController.text.isEmpty ? null : _academicNotesController.text,
+      semester1Grade: _semester1Controller.text.isEmpty
+          ? null
+          : double.tryParse(_semester1Controller.text),
+      semester2Grade: _semester2Controller.text.isEmpty
+          ? null
+          : double.tryParse(_semester2Controller.text),
+      semester3Grade: _semester3Controller.text.isEmpty
+          ? null
+          : double.tryParse(_semester3Controller.text),
+      academicNotes: _academicNotesController.text.isEmpty
+          ? null
+          : _academicNotesController.text,
       hasChronicDisease: _hasChronicDisease,
-      diseaseName: _diseaseNameController.text.isEmpty ? null : _diseaseNameController.text,
-      medications: _medicationsController.text.isEmpty ? null : _medicationsController.text,
-      medicalInstructions: _medicalInstructionsController.text.isEmpty ? null : _medicalInstructionsController.text,
-      doctorName: _doctorNameController.text.isEmpty ? null : _doctorNameController.text,
-      emergencyPhone: _emergencyPhoneController.text.isEmpty ? null : _emergencyPhoneController.text,
+      diseaseName: _diseaseNameController.text.isEmpty
+          ? null
+          : _diseaseNameController.text,
+      medications: _medicationsController.text.isEmpty
+          ? null
+          : _medicationsController.text,
+      medicalInstructions: _medicalInstructionsController.text.isEmpty
+          ? null
+          : _medicalInstructionsController.text,
+      doctorName: _doctorNameController.text.isEmpty
+          ? null
+          : _doctorNameController.text,
+      emergencyPhone: _emergencyPhoneController.text.isEmpty
+          ? null
+          : _emergencyPhoneController.text,
     );
 
     if (widget.student == null) {
@@ -162,14 +183,14 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     } else {
       _studentBloc.add(UpdateStudentEvent(student));
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('جاري الحفظ...')),
-    );
+    CustomSnackbar.showSuccess(context, 'جاري الحفظ...');
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    // const SnackBar(content: Text('جاري الحفظ...')),
+    //   );
 
     // انتظر قليلاً ثم أغلق الشاشة
     await Future.delayed(const Duration(milliseconds: 800));
-    
+
     if (mounted) {
       Navigator.pop(context, true);
     }
@@ -226,12 +247,18 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
           listener: (context, state) {
             if (state is StudentOperationSuccess && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.message), backgroundColor: Colors.green),
+                SnackBar(
+                  content: Text(state.message),
+                  backgroundColor: Colors.green,
+                ),
               );
             }
             if (state is StudentError && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+                SnackBar(
+                  content: Text(state.message),
+                  backgroundColor: Colors.red,
+                ),
               );
               setState(() {
                 _isSaving = false;
@@ -278,7 +305,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
 
   // باقي الدوال (_buildPersonalInfoTab, _buildAcademicInfoTab, _buildHealthInfoTab)
   // تبقى كما هي دون تغيير
-  
+
   Widget _buildPersonalInfoTab(bool isMobile) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isMobile ? 16 : 24),
@@ -310,17 +337,33 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTextField('معدل الفصل الأول (اختياري)', _semester1Controller, Icons.grade,
-              keyboardType: TextInputType.number),
+          _buildTextField(
+            'معدل الفصل الأول (اختياري)',
+            _semester1Controller,
+            Icons.grade,
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 16),
-          _buildTextField('معدل الفصل الثاني (اختياري)', _semester2Controller, Icons.grade,
-              keyboardType: TextInputType.number),
+          _buildTextField(
+            'معدل الفصل الثاني (اختياري)',
+            _semester2Controller,
+            Icons.grade,
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 16),
-          _buildTextField('معدل الفصل الثالث (اختياري)', _semester3Controller, Icons.grade,
-              keyboardType: TextInputType.number),
+          _buildTextField(
+            'معدل الفصل الثالث (اختياري)',
+            _semester3Controller,
+            Icons.grade,
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 16),
-          _buildTextField('ملاحظات المدرب عن المستوى الدراسي', _academicNotesController, Icons.note,
-              maxLines: 3),
+          _buildTextField(
+            'ملاحظات المدرب عن المستوى الدراسي',
+            _academicNotesController,
+            Icons.note,
+            maxLines: 3,
+          ),
         ],
       ),
     );
@@ -348,16 +391,32 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
             const SizedBox(height: 16),
             _buildTextField('نوع المرض', _diseaseNameController, Icons.sick),
             const SizedBox(height: 16),
-            _buildTextField('الأدوية المستعملة', _medicationsController, Icons.medication),
+            _buildTextField(
+              'الأدوية المستعملة',
+              _medicationsController,
+              Icons.medication,
+            ),
             const SizedBox(height: 16),
-            _buildTextField('تعليمات طبية خاصة', _medicalInstructionsController, Icons.healing,
-                maxLines: 2),
+            _buildTextField(
+              'تعليمات طبية خاصة',
+              _medicalInstructionsController,
+              Icons.healing,
+              maxLines: 2,
+            ),
           ],
           const SizedBox(height: 16),
-          _buildTextField('اسم الطبيب المعالج (اختياري)', _doctorNameController, Icons.local_hospital),
+          _buildTextField(
+            'اسم الطبيب المعالج (اختياري)',
+            _doctorNameController,
+            Icons.local_hospital,
+          ),
           const SizedBox(height: 16),
-          _buildTextField('رقم هاتف الطوارئ', _emergencyPhoneController, Icons.emergency,
-              keyboardType: TextInputType.phone),
+          _buildTextField(
+            'رقم هاتف الطوارئ',
+            _emergencyPhoneController,
+            Icons.emergency,
+            keyboardType: TextInputType.phone,
+          ),
         ],
       ),
     );

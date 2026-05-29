@@ -66,6 +66,10 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.4
 
+  fl_chart: ^1.2.0
+
+  animate_do: ^5.1.0 
+
   # الصور
   image_picker: ^1.1.2
   # The following adds the Cupertino Icons font to your application.
