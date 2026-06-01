@@ -81,6 +81,24 @@ class AppDatabase {
         synced INTEGER DEFAULT 0
       )
     ''');
+
+    // في دالة _createTables، أضف:
+    await db.execute('''
+  CREATE TABLE payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    payment_date TEXT NOT NULL,
+    payment_type TEXT NOT NULL,
+    month INTEGER,
+    year INTEGER,
+    is_extra INTEGER DEFAULT 0,
+    extra_reason TEXT,
+    is_gifted INTEGER DEFAULT 0,
+    notes TEXT,
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+  )
+''');
   }
 
   // ✅ دالة الترقية (عند تغيير رقم الإصدار)
@@ -114,6 +132,23 @@ class AppDatabase {
           synced INTEGER DEFAULT 0
         )
       ''');
+
+      await db.execute('''
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      payment_date TEXT NOT NULL,
+      payment_type TEXT NOT NULL,
+      month INTEGER,
+      year INTEGER,
+      is_extra INTEGER DEFAULT 0,
+      extra_reason TEXT,
+      is_gifted INTEGER DEFAULT 0,
+      notes TEXT,
+      FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+    )
+  ''');
     }
   }
 

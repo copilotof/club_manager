@@ -1,6 +1,7 @@
 // lib/app/routes.dart (أضف هذه الأسطر الجديدة)
 import 'package:go_router/go_router.dart';
 import '../presentation/screens/add_edit_student_screen.dart';
+import '../presentation/screens/payments_screen.dart';
 import '../presentation/screens/splash_screen.dart';
 import '../presentation/screens/login_screen.dart';
 import '../presentation/screens/dashboard_screen.dart';
@@ -67,6 +68,20 @@ final GoRouter router = GoRouter(
       builder: (context, state) {
         // سننشئ طريقة لجلب الطالب لاحقاً
         return const AddEditStudentScreen();
+      },
+    ),
+
+    GoRoute(
+      path: '/payments',
+      name: 'payments',
+      builder: (context, state) => const PaymentsScreen(),
+    ),
+    GoRoute(
+      path: '/student-payments/:id',
+      name: 'student_payments',
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return PaymentsScreen(studentId: id);
       },
     ),
   ],

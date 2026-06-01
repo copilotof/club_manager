@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../data/datasources/local/app_database.dart';
+import '../../data/models/payment_model.dart';
 import '../../data/models/student_model.dart';
+import '../../data/repositories/payment_repository.dart';
 import '../bloc/student/student_bloc.dart';
 import '../bloc/student/events/student_event.dart';
 import '../bloc/student/states/student_state.dart';
@@ -11,6 +14,9 @@ import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
 import 'add_edit_student_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'student_payments_screen.dart';
+
+import 'add_payment_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   final int studentId;
@@ -24,6 +30,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     with SingleTickerProviderStateMixin {
   late StudentBloc _studentBloc;
   late TabController _tabController;
+  late Future<List<PaymentModel>> _paymentsFuture;
+  bool _paymentsRefresh = false;
+
   StudentModel? _student;
   bool _isLoading = true;
 
@@ -33,6 +42,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     _studentBloc = StudentBloc(getIt());
     _tabController = TabController(length: 6, vsync: this);
     _studentBloc.add(LoadStudentsEvent());
+    // ✅ استدعاء دالة التحقق
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkDatabaseStructure();
+    });
+  }
+
+  void _refreshPayments() {
+    setState(() {
+      _paymentsRefresh = !_paymentsRefresh;
+      _paymentsFuture = _getStudentPayments();
+    });
   }
 
   @override
@@ -109,6 +129,35 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
+  // أضف هذه الدالة في _StudentProfileScreenState
+  Future<void> _checkDatabaseStructure() async {
+    final db = await getIt<AppDatabase>().database;
+
+    // التحقق من وجود جدول payments
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='payments'",
+    );
+    print('📊 هل جدول payments موجود؟ ${tables.isNotEmpty}');
+
+    if (tables.isNotEmpty) {
+      // عرض هيكل الجدول
+      final structure = await db.rawQuery("PRAGMA table_info(payments)");
+      print('📊 هيكل جدول payments:');
+      for (var col in structure) {
+        print('   - ${col['name']}: ${col['type']}');
+      }
+
+      // عرض جميع الدفعات في قاعدة البيانات
+      final allPayments = await db.query('payments');
+      print('📊 إجمالي الدفعات في قاعدة البيانات: ${allPayments.length}');
+      for (var p in allPayments) {
+        print(
+          '   - الدفعة: id=${p['id']}, student_id=${p['student_id']}, amount=${p['amount']}, type=${p['payment_type']}',
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtils.isMobile(context);
@@ -132,16 +181,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               tooltip: 'تعديل',
             ),
           ],
+
           bottom: TabBar(
             controller: _tabController,
             isScrollable: true,
             tabs: const [
               Tab(text: 'معلومات شخصية', icon: Icon(Icons.person)),
+              Tab(text: 'المدفوعات', icon: Icon(Icons.payments)),
               Tab(text: 'معلومات دراسية', icon: Icon(Icons.school)),
               Tab(text: 'معلومات صحية', icon: Icon(Icons.health_and_safety)),
               Tab(text: 'السجل الرياضي', icon: Icon(Icons.emoji_events)),
-              Tab(text: 'المدفوعات', icon: Icon(Icons.payments)),
-              Tab(text: '📊 إحصائيات', icon: Icon(Icons.bar_chart)),
+              Tab(text: 'إحصائيات', icon: Icon(Icons.bar_chart)),
             ],
           ),
         ),
@@ -187,10 +237,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 controller: _tabController,
                 children: [
                   _buildPersonalInfoTab(isMobile),
+                  _buildPaymentsTab(isMobile),
                   _buildAcademicInfoTab(isMobile),
                   _buildHealthInfoTab(isMobile),
                   _buildSportsRecordTab(isMobile),
-                  _buildPaymentsTab(isMobile),
                   _buildStatisticsTab(isMobile),
                 ],
               );
@@ -252,6 +302,191 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPaymentsTab(bool isMobile) {
+    return FutureBuilder<List<PaymentModel>>(
+      key: ValueKey(_paymentsRefresh),
+      future: _getStudentPayments(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'خطأ: ${snapshot.error}',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: 200,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _paymentsRefresh = !_paymentsRefresh;
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final payments = snapshot.data ?? [];
+
+        if (payments.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.payments_outlined,
+                  size: 80,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'لا توجد مدفوعات مسجلة',
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 24),
+                // زر الاختبار
+                SizedBox(
+                  width: 220,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                    ),
+                    onPressed: () async {
+                      final db = await getIt<AppDatabase>().database;
+                      final testPayment = {
+                        'student_id': widget.studentId,
+                        'amount': 1000,
+                        'payment_date': DateTime.now().toIso8601String(),
+                        'payment_type': 'monthly',
+                        'month': DateTime.now().month,
+                        'year': DateTime.now().year,
+                        'is_extra': 0,
+                        'is_gifted': 0,
+                      };
+                      final id = await db.insert('payments', testPayment);
+                      print('🧪 تم إدراج دفعة اختبارية: id=$id');
+                      setState(() {
+                        _paymentsRefresh = !_paymentsRefresh;
+                      });
+                    },
+                    child: const Text('🧪 إضافة دفعة اختبارية (1000 دج)'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 220,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _paymentsRefresh = !_paymentsRefresh;
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('تحديث'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 220,
+                  child: ElevatedButton.icon(
+                    onPressed: _addPayment,
+                    icon: const Icon(Icons.add),
+                    label: const Text('تسجيل دفعة جديدة'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE53935),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final totalPaid = payments.fold<double>(0, (sum, p) => sum + p.amount);
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _paymentsRefresh = !_paymentsRefresh;
+            });
+          },
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              // بطاقة الإجمالي
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'إجمالي المدفوعات',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${totalPaid.toStringAsFixed(0)} دج',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'عدد الدفعات: ${payments.length}',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // قائمة الدفعات
+              ...payments.map((payment) => _buildPaymentCard(payment)),
+
+              const SizedBox(height: 16),
+
+              // زر إضافة دفعة
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _addPayment,
+                  icon: const Icon(Icons.add),
+                  label: const Text('تسجيل دفعة جديدة'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -362,27 +597,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           const SizedBox(height: 16),
           const Text(
             'سجل الأحزمة والبطولات',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'سيتم إضافة هذه الميزة قريباً',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPaymentsTab(bool isMobile) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.payments, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          const Text(
-            'سجل المدفوعات',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -660,6 +874,229 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ دالة جلب المدفوعات المحسّنة
+  Future<List<PaymentModel>> _getStudentPayments() async {
+    try {
+      final db = await getIt<AppDatabase>().database;
+
+      // استعلام مباشر من قاعدة البيانات
+      final result = await db.query(
+        'payments',
+        where: 'student_id = ?',
+        whereArgs: [widget.studentId],
+        orderBy: 'payment_date DESC',
+      );
+
+      print(
+        '📊 استعلام مباشر: وجدت ${result.length} دفعة للطالب ${widget.studentId}',
+      );
+
+      if (result.isNotEmpty) {
+        for (var row in result) {
+          print(
+            '   - الدفعة: ${row['amount']} دج, النوع: ${row['payment_type']}, التاريخ: ${row['payment_date']}',
+          );
+        }
+      }
+
+      return result.map((map) => PaymentModel.fromMap(map)).toList();
+    } catch (e) {
+      print('❌ خطأ في جلب المدفوعات: $e');
+      return [];
+    }
+  }
+
+  // ✅ دالة إضافة دفعة محسّنة
+  void _addPayment() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddPaymentScreen(
+          studentId: widget.studentId,
+          onPaymentAdded: () {
+            setState(() {
+              _paymentsRefresh = !_paymentsRefresh;
+            });
+          },
+        ),
+      ),
+    );
+    if (result == true) {
+      setState(() {
+        _paymentsRefresh = !_paymentsRefresh;
+      });
+    }
+  }
+
+  Widget _buildPaymentCard(PaymentModel payment) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: _getPaymentColor(
+            payment.paymentType,
+          ).withOpacity(0.1),
+          child: Icon(
+            _getPaymentIcon(payment.paymentType),
+            color: _getPaymentColor(payment.paymentType),
+            size: 20,
+          ),
+        ),
+        title: Text(
+          payment.paymentTypeName,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        subtitle: Text(
+          _formatDate(payment.paymentDate),
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${payment.amount.toStringAsFixed(0)} دج',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: payment.isGifted
+                    ? Colors.green
+                    : const Color(0xFFE53935),
+              ),
+            ),
+            if (payment.isGifted)
+              const Text(
+                'إهداء',
+                style: TextStyle(fontSize: 10, color: Colors.green),
+              ),
+          ],
+        ),
+        onTap: () => _showPaymentDetails(payment),
+      ),
+    );
+  }
+
+  Color _getPaymentColor(String type) {
+    switch (type) {
+      case 'monthly':
+        return Colors.blue;
+      case 'insurance':
+        return Colors.green;
+      case 'extra':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getPaymentIcon(String type) {
+    switch (type) {
+      case 'monthly':
+        return Icons.calendar_today;
+      case 'insurance':
+        return Icons.security;
+      case 'extra':
+        return Icons.shopping_bag;
+      default:
+        return Icons.payment;
+    }
+  }
+
+  void _showPaymentDetails(PaymentModel payment) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('تفاصيل الدفعة - ${payment.paymentTypeName}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDetailRow(
+              'المبلغ',
+              '${payment.amount.toStringAsFixed(0)} دج',
+            ),
+            _buildDetailRow('التاريخ', _formatDate(payment.paymentDate)),
+            if (payment.month != null)
+              _buildDetailRow('الشهر', '${payment.month}'),
+            if (payment.year != null)
+              _buildDetailRow('السنة', '${payment.year}'),
+            if (payment.extraReason != null)
+              _buildDetailRow('السبب', payment.extraReason!),
+            if (payment.isGifted) _buildDetailRow('نوع الدفعة', 'إهداء 🚀'),
+            if (payment.notes != null)
+              _buildDetailRow('ملاحظات', payment.notes!),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      width: 120,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(fontSize: 10, color: color),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

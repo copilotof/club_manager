@@ -7,6 +7,8 @@ import '../data/datasources/remote/supabase_client.dart';
 import '../data/repositories/student_repository.dart';
 import '../data/repositories/attendance_repository.dart';
 import '../data/repositories/sync_repository.dart';
+import '../data/repositories/payment_repository.dart';
+import '../domain/repositories/i_payment_repository.dart';
 import '../domain/repositories/i_student_repository.dart';
 import '../domain/repositories/i_attendance_repository.dart';
 import '../domain/repositories/i_sync_repository.dart';
@@ -47,11 +49,17 @@ Future<void> setupDependencyInjection() async {
     ),
   );
 
+  getIt.registerLazySingleton<PaymentRepository>(
+    () => PaymentRepository(localDb: getIt<AppDatabase>()),
+  );
   getIt.registerLazySingleton<ISyncRepository>(
     () => SyncRepository(
       localDb: getIt<AppDatabase>(),
       remoteApi: getIt<SupabaseClient>(),
       connectivity: getIt<Connectivity>(),
     ),
+  );
+  getIt.registerLazySingleton<IPaymentRepository>(
+    () => PaymentRepository(localDb: getIt<AppDatabase>()),
   );
 }
