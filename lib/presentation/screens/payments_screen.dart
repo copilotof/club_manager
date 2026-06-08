@@ -40,7 +40,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
-
+  /*
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -165,6 +165,149 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             MaterialPageRoute(
               builder: (_) => AddPaymentScreen(
                 studentId: widget.studentId,
+                onPaymentAdded: () {
+                  if (widget.studentId != null) {
+                    _paymentBloc.add(
+                      LoadStudentPaymentsEvent(widget.studentId!),
+                    );
+                  } else {
+                    _paymentBloc.add(LoadPaymentsEvent());
+                  }
+                },
+              ),
+            ),
+          );
+        },
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+*/
+
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          widget.studentId != null ? 'دفعات الطالب' : 'الدفعات المالية',
+        ),
+      ),
+      body: BlocConsumer<PaymentBloc, PaymentState>(
+        bloc: _paymentBloc,
+        listener: (context, state) {
+          if (state is PaymentOperationSuccess) {
+            CustomSnackbar.showSuccess(context, state.message);
+          }
+          if (state is PaymentError) {
+            CustomSnackbar.showError(context, state.message);
+          }
+        },
+        builder: (context, state) {
+          if (state is PaymentLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (state is PaymentsLoaded) {
+            if (state.payments.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.payments, size: 80, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'لا توجد دفعات مسجلة',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddPaymentScreenV2(
+                              studentId:
+                                  widget.studentId ?? 0, // ✅ تم الإصلاح هنا
+                              onPaymentAdded: () {
+                                if (widget.studentId != null) {
+                                  _paymentBloc.add(
+                                    LoadStudentPaymentsEvent(widget.studentId!),
+                                  );
+                                } else {
+                                  _paymentBloc.add(LoadPaymentsEvent());
+                                }
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('تسجيل دفعة جديدة'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Column(
+              children: [
+                // إحصائيات سريعة (فقط في قائمة الكل)
+                if (widget.studentId == null)
+                  Container(
+                    margin: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatItem(
+                          Icons.account_balance_wallet,
+                          '${state.totalIncome.toStringAsFixed(0)} دج',
+                          'إجمالي الدخل',
+                        ),
+                        Container(
+                          width: 1,
+                          height: 50,
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                        _buildStatItem(
+                          Icons.warning_amber,
+                          '${state.totalOutstanding.toStringAsFixed(0)} دج',
+                          'المتأخرات',
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // قائمة الدفعات
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: state.payments.length,
+                    itemBuilder: (context, index) {
+                      final payment = state.payments[index];
+                      return _buildPaymentCard(payment);
+                    },
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return const SizedBox.shrink();
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddPaymentScreenV2(
+                studentId: widget.studentId ?? 0, // ✅ تم الإصلاح هنا أيضاً
                 onPaymentAdded: () {
                   if (widget.studentId != null) {
                     _paymentBloc.add(

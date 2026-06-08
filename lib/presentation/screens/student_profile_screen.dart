@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../core/widgets/custom_snackbar.dart';
 import '../../data/datasources/local/app_database.dart';
 import '../../data/models/payment_model.dart';
 import '../../data/models/student_model.dart';
@@ -35,6 +36,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
   StudentModel? _student;
   bool _isLoading = true;
+
+  int _selectedYear = DateTime.now().year;
+  bool _showOnlyUnpaid = false;
 
   @override
   void initState() {
@@ -306,187 +310,264 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   }
 
   Widget _buildPaymentsTab(bool isMobile) {
-    return FutureBuilder<List<PaymentModel>>(
-      key: ValueKey(_paymentsRefresh),
-      future: _getStudentPayments(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  'خطأ: ${snapshot.error}',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: 200,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _paymentsRefresh = !_paymentsRefresh;
-                      });
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('إعادة المحاولة'),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final payments = snapshot.data ?? [];
-
-        if (payments.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.payments_outlined,
-                  size: 80,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'لا توجد مدفوعات مسجلة',
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 24),
-                // زر الاختبار
-                SizedBox(
-                  width: 220,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                    ),
-                    onPressed: () async {
-                      final db = await getIt<AppDatabase>().database;
-                      final testPayment = {
-                        'student_id': widget.studentId,
-                        'amount': 1000,
-                        'payment_date': DateTime.now().toIso8601String(),
-                        'payment_type': 'monthly',
-                        'month': DateTime.now().month,
-                        'year': DateTime.now().year,
-                        'is_extra': 0,
-                        'is_gifted': 0,
-                      };
-                      final id = await db.insert('payments', testPayment);
-                      print('🧪 تم إدراج دفعة اختبارية: id=$id');
-                      setState(() {
-                        _paymentsRefresh = !_paymentsRefresh;
-                      });
-                    },
-                    child: const Text('🧪 إضافة دفعة اختبارية (1000 دج)'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: 220,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _paymentsRefresh = !_paymentsRefresh;
-                      });
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('تحديث'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: 220,
-                  child: ElevatedButton.icon(
-                    onPressed: _addPayment,
-                    icon: const Icon(Icons.add),
-                    label: const Text('تسجيل دفعة جديدة'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE53935),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final totalPaid = payments.fold<double>(0, (sum, p) => sum + p.amount);
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {
-              _paymentsRefresh = !_paymentsRefresh;
-            });
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(12),
+    return Column(
+      children: [
+        // شريط التصفية العلوي
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.white,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // بطاقة الإجمالي
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFE53935), Color(0xFFC62828)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'إجمالي المدفوعات',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${totalPaid.toStringAsFixed(0)} دج',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
+              // صف السنة وزر الإضافة
+              Row(
+                children: [
+                  // اختيار السنة
+                  Expanded(
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _selectedYear,
+                          isExpanded: true,
+                          items: const [
+                            DropdownMenuItem(
+                              value: 0,
+                              child: Text('جميع السنوات'),
+                            ),
+                            DropdownMenuItem(value: 2026, child: Text('2026')),
+                            DropdownMenuItem(value: 2025, child: Text('2025')),
+                            DropdownMenuItem(value: 2024, child: Text('2024')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedYear = value ?? DateTime.now().year;
+                              _paymentsRefresh = !_paymentsRefresh;
+                            });
+                          },
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'عدد الدفعات: ${payments.length}',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // قائمة الدفعات
-              ...payments.map((payment) => _buildPaymentCard(payment)),
-
-              const SizedBox(height: 16),
-
-              // زر إضافة دفعة
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _addPayment,
-                  icon: const Icon(Icons.add),
-                  label: const Text('تسجيل دفعة جديدة'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE53935),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  // ✅ زر "دفعة جديدة" - تم إصلاحه
+                  SizedBox(
+                    width: 50,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _addPayment,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE53935),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: const Icon(
+                        Icons.add,
+                        size: 28,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // فلتر المبالغ غير المسددة
+              FilterChip(
+                label: const Text('غير مكتملة'),
+                selected: _showOnlyUnpaid,
+                onSelected: (value) {
+                  setState(() {
+                    _showOnlyUnpaid = value;
+                    _paymentsRefresh = !_paymentsRefresh;
+                  });
+                },
+                selectedColor: const Color(0xFFE53935).withOpacity(0.2),
               ),
             ],
           ),
-        );
-      },
+        ),
+
+        // قائمة الدفعات
+        Expanded(
+          child: FutureBuilder<List<PaymentModel>>(
+            key: ValueKey(_paymentsRefresh),
+            future: _getStudentPaymentsFiltered(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 60,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'خطأ: ${snapshot.error}',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _paymentsRefresh = !_paymentsRefresh;
+                          });
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('إعادة المحاولة'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final payments = snapshot.data ?? [];
+
+              if (payments.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.payments_outlined,
+                        size: 60,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'لا توجد مدفوعات',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: 200,
+                        child: ElevatedButton.icon(
+                          onPressed: _addPayment,
+                          icon: const Icon(Icons.add),
+                          label: const Text('تسجيل دفعة'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE53935),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final totalPaid = payments.fold<double>(
+                0,
+                (sum, p) => sum + p.amount,
+              );
+
+              return ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  // بطاقة الإجمالي
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'إجمالي المدفوعات',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${totalPaid.toStringAsFixed(0)} دج',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${payments.length} دفعة',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...payments.map((p) => _buildPaymentCard(p)),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
+    final payments = await _getStudentPayments();
+
+    var filtered = payments;
+
+    // تصفية حسب السنة
+    if (_selectedYear != 0) {
+      filtered = filtered
+          .where((p) => p.paymentDate.year == _selectedYear)
+          .toList();
+    }
+
+    // تصفية المبالغ غير المسددة (سيتم تطويرها لاحقاً)
+    if (_showOnlyUnpaid) {
+      // مؤقت: عرض الدفعات الجزئية فقط
+      filtered = filtered.where((p) => p.isPartial == true).toList();
+    }
+
+    return filtered;
+  }
+
+  void _deletePayment(int paymentId) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف هذه الدفعة؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final paymentRepo = PaymentRepository(localDb: getIt());
+              await paymentRepo.deletePayment(paymentId);
+              setState(() {
+                _paymentsRefresh = !_paymentsRefresh;
+              });
+              if (!mounted) return;
+              Navigator.pop(context);
+              CustomSnackbar.showSuccess(context, 'تم حذف الدفعة بنجاح');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -917,13 +998,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddPaymentScreen(
+        builder: (_) => AddPaymentScreenV2(
           studentId: widget.studentId,
           onPaymentAdded: () {
             setState(() {
               _paymentsRefresh = !_paymentsRefresh;
             });
           },
+          initialYear: _selectedYear == 0
+              ? DateTime.now().year
+              : _selectedYear, // 👈 تمرير السنة
         ),
       ),
     );
@@ -933,6 +1017,86 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       });
     }
   }
+  /*
+  Widget _buildPaymentCard(PaymentModel payment) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: _getPaymentColor(
+            payment.paymentType,
+          ).withOpacity(0.1),
+          child: Icon(
+            _getPaymentIcon(payment.paymentType),
+            color: _getPaymentColor(payment.paymentType),
+            size: 20,
+          ),
+        ),
+        title: Text(
+          _formatPaymentName(payment),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        subtitle: Text(
+          _formatDate(payment.paymentDate),
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${payment.amount.toStringAsFixed(0)} دج',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: payment.isGifted
+                        ? Colors.green
+                        : const Color(0xFFE53935),
+                  ),
+                ),
+                const SizedBox(height: 4), // مسافة صغيرة لتنظيم المظهر
+                // ✅ الـ Container الديناميكي المضاف لحالة الدفع
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _getPaymentStatusColor(payment).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _getPaymentStatusText(payment),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _getPaymentStatusColor(payment),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.delete_outline,
+                color: Colors.red,
+                size: 20,
+              ),
+              onPressed: () => _deletePayment(payment.id!),
+            ),
+          ],
+        ),
+
+        onTap: () => _showPaymentDetails(payment),
+      ),
+    );
+  }
+*/
 
   Widget _buildPaymentCard(PaymentModel payment) {
     return Card(
@@ -951,12 +1115,33 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           ),
         ),
         title: Text(
-          payment.paymentTypeName,
+          _formatPaymentName(payment),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
-        subtitle: Text(
-          _formatDate(payment.paymentDate),
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _formatDate(payment.paymentDate),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: _getPaymentStatusColor(payment).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _getPaymentStatusText(payment),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _getPaymentStatusColor(payment),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -968,15 +1153,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: payment.isGifted
-                    ? Colors.green
+                    ? Colors.purple
                     : const Color(0xFFE53935),
               ),
             ),
-            if (payment.isGifted)
-              const Text(
-                'إهداء',
-                style: TextStyle(fontSize: 10, color: Colors.green),
-              ),
           ],
         ),
         onTap: () => _showPaymentDetails(payment),
@@ -1123,5 +1303,130 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final maxPossible = stats.length * 6; // 6 حصص في الأسبوع
     if (maxPossible == 0) return 0;
     return (total / maxPossible) * 100;
+  }
+  /*
+  Color _getPaymentStatusColor(PaymentModel payment) {
+    if (payment.isGifted) return Colors.purple;
+    if (payment.isFullyPaid) return Colors.green;
+    if (payment.remainingAmount != null && payment.remainingAmount! > 0)
+      return Colors.orange;
+    if (payment.isPartial) return Colors.orange;
+    return Colors.grey;
+  }
+
+  String _getPaymentStatusText(PaymentModel payment) {
+    if (payment.isGifted) return 'إهداء';
+    if (payment.isFullyPaid) return 'مكتمل ✓';
+    if (payment.remainingAmount != null && payment.remainingAmount! > 0) {
+      return 'متبقي: ${payment.remainingAmount!.toStringAsFixed(0)} دج';
+    }
+    if (payment.isPartial) return 'دفعة جزئية';
+    return '';
+  }
+*/
+
+  Color _getPaymentStatusColor(PaymentModel payment) {
+    // إهداء
+    if (payment.isGifted) {
+      return Colors.purple;
+    }
+
+    // دفعة مسبقة أو مكتملة
+    if (payment.prepaidMonths != null && payment.prepaidMonths! > 1) {
+      return Colors.green;
+    }
+
+    if (payment.isFullyPaid) {
+      return Colors.green;
+    }
+
+    // غير مكتمل (متبقي أو دفعة جزئية)
+    if ((payment.remainingAmount != null && payment.remainingAmount! > 0) ||
+        payment.isPartial) {
+      return Colors.orange;
+    }
+
+    return Colors.grey;
+  }
+
+  String _getPaymentStatusText(PaymentModel payment) {
+    // 1. إهداء
+    if (payment.isGifted) {
+      return 'إهداء 🎁';
+    }
+
+    // 2. دفعة مسبقة (عدة أشهر)
+    if (payment.prepaidMonths != null && payment.prepaidMonths! > 1) {
+      final startMonth = payment.prepaidStartMonth ?? payment.month;
+      final startYear = payment.targetYear ?? payment.year;
+      var endMonth = startMonth! + payment.prepaidMonths! - 1;
+      var endYear = startYear;
+      if (endMonth > 12) {
+        endMonth -= 12;
+        endYear = (endYear ?? 0) + 1;
+      }
+      return 'دفعة مسبقة (${payment.prepaidMonths} أشهر) ✓';
+    }
+
+    // 3. اشتراك شهري مكتمل
+    if (payment.paymentType == 'monthly' && payment.isFullyPaid) {
+      return 'مكتمل ✓';
+    }
+
+    // 4. اشتراك شهري غير مكتمل (متبقي)
+    if (payment.paymentType == 'monthly' &&
+        !payment.isFullyPaid &&
+        payment.remainingAmount != null &&
+        payment.remainingAmount! > 0) {
+      return 'متبقي: ${payment.remainingAmount!.toStringAsFixed(0)} دج';
+    }
+
+    // 5. اشتراك شهري غير مكتمل (دفعة جزئية)
+    if (payment.paymentType == 'monthly' && payment.isPartial) {
+      return 'دفعة جزئية';
+    }
+
+    // 6. حقوق التأمين مكتملة
+    if (payment.paymentType == 'insurance' && payment.isFullyPaid) {
+      return 'مكتمل ✓';
+    }
+
+    // 7. حقوق التأمين غير مكتملة
+    if (payment.paymentType == 'insurance' &&
+        !payment.isFullyPaid &&
+        payment.remainingAmount != null &&
+        payment.remainingAmount! > 0) {
+      return 'متبقي: ${payment.remainingAmount!.toStringAsFixed(0)} دج';
+    }
+
+    // 8. مستحقات إضافية
+    if (payment.paymentType == 'extra') {
+      if (payment.isGifted) {
+        return 'إهداء 🎁';
+      }
+      return 'مستحقات إضافية';
+    }
+
+    // 9. الحالة الافتراضية
+    return payment.isFullyPaid ? 'مكتمل ✓' : 'مسجل';
+  }
+
+  String _formatPaymentName(PaymentModel payment) {
+    if (payment.paymentType == 'monthly') {
+      if (payment.discountMonths != null && payment.discountMonths! > 1) {
+        // دفعة مسبقة لعدة أشهر
+        final startMonth = payment.targetMonth ?? payment.month;
+        final endMonth = startMonth! + payment.discountMonths! - 1;
+        return 'اشتراك أشهر $startMonth إلى $endMonth';
+      } else {
+        // شهر فردي
+        return 'اشتراك شهر ${payment.targetMonth ?? payment.month}';
+      }
+    } else if (payment.paymentType == 'insurance') {
+      return 'حقوق التسجيل ${payment.targetYear ?? payment.year}';
+    } else if (payment.paymentType == 'extra') {
+      return payment.extraReason ?? 'مستحقات إضافية';
+    }
+    return 'دفعة غير معروفة';
   }
 }

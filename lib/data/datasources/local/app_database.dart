@@ -19,7 +19,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 2, // ✅ زيادة رقم الإصدار من 1 إلى 2
+      version: 3,
       onCreate: _createTables,
       onUpgrade: _onUpgrade, // ✅ إضافة دالة الترقية
     );
@@ -81,8 +81,34 @@ class AppDatabase {
         synced INTEGER DEFAULT 0
       )
     ''');
+    /*
+    // ✅ جدول الدفعات (بجميع الأعمدة)
+    await db.execute('''
+    CREATE TABLE payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      payment_date TEXT NOT NULL,
+      payment_type TEXT NOT NULL,
+      month INTEGER,
+      year INTEGER,
+      is_extra INTEGER DEFAULT 0,
+      extra_reason TEXT,
+      is_gifted INTEGER DEFAULT 0,
+      notes TEXT,
+      is_partial INTEGER DEFAULT 0,
+      parent_payment_id INTEGER,
+      discount_months INTEGER,
+      discount_percentage REAL,
+      is_fully_paid INTEGER DEFAULT 0,
+      target_month INTEGER,
+      target_year INTEGER,
+      remaining_amount REAL,
+      FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+    )
+  ''');
+ */
 
-    // في دالة _createTables، أضف:
     await db.execute('''
   CREATE TABLE payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,59 +122,92 @@ class AppDatabase {
     extra_reason TEXT,
     is_gifted INTEGER DEFAULT 0,
     notes TEXT,
+    is_partial INTEGER DEFAULT 0,
+    parent_payment_id INTEGER,
+    discount_months INTEGER,
+    discount_percentage REAL,
+    is_fully_paid INTEGER DEFAULT 0,
+    target_month INTEGER,
+    target_year INTEGER,
+    remaining_amount REAL,
+    prepaid_months INTEGER,
+    prepaid_start_month INTEGER,
+    prepaid_end_month INTEGER,
     FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
   )
 ''');
   }
 
-  // ✅ دالة الترقية (عند تغيير رقم الإصدار)
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    print('🔄 ترقية قاعدة البيانات من الإصدار $oldVersion إلى $newVersion');
+
     if (oldVersion < 2) {
-      // إنشاء جدول attendances إذا لم يكن موجوداً
+      // إضافة جدول attendances (كان في الإصدار 2)
       await db.execute('''
-        CREATE TABLE IF NOT EXISTS attendances (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          student_id INTEGER NOT NULL,
-          session_date TEXT NOT NULL,
-          is_present INTEGER DEFAULT 0,
-          was_auto_generated INTEGER DEFAULT 1,
-          marked_at TEXT,
-          excuse_reason TEXT,
-          FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
-          UNIQUE(student_id, session_date)
-        )
-      ''');
+      CREATE TABLE IF NOT EXISTS attendances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        session_date TEXT NOT NULL,
+        is_present INTEGER DEFAULT 0,
+        was_auto_generated INTEGER DEFAULT 1,
+        marked_at TEXT,
+        excuse_reason TEXT,
+        FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE,
+        UNIQUE(student_id, session_date)
+      )
+    ''');
+    }
 
-      // إنشاء جدول pending_operations إذا لم يكن موجوداً
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS pending_operations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          operation_type TEXT NOT NULL,
-          table_name TEXT NOT NULL,
-          operation TEXT NOT NULL,
-          data TEXT NOT NULL,
-          timestamp INTEGER NOT NULL,
-          retry_count INTEGER DEFAULT 0,
-          synced INTEGER DEFAULT 0
-        )
-      ''');
+    if (oldVersion < 3) {
+      // إضافة الأعمدة الجديدة لجدول payments (الإصدار 3)
+      try {
+        // قائمة الأعمدة المطلوب إضافتها
+        final columnsToAdd = [
+          'is_partial INTEGER DEFAULT 0',
+          'parent_payment_id INTEGER',
+          'discount_months INTEGER',
+          'discount_percentage REAL',
+          'is_fully_paid INTEGER DEFAULT 0',
+          'target_month INTEGER',
+          'target_year INTEGER',
+          'remaining_amount REAL',
+        ];
 
-      await db.execute('''
-    CREATE TABLE IF NOT EXISTS payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
-      payment_date TEXT NOT NULL,
-      payment_type TEXT NOT NULL,
-      month INTEGER,
-      year INTEGER,
-      is_extra INTEGER DEFAULT 0,
-      extra_reason TEXT,
-      is_gifted INTEGER DEFAULT 0,
-      notes TEXT,
-      FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
-    )
-  ''');
+        for (var column in columnsToAdd) {
+          try {
+            await db.execute('ALTER TABLE payments ADD COLUMN $column');
+            print('✅ تم إضافة العمود: $column');
+          } catch (e) {
+            print('⚠️ العمود موجود مسبقاً أو خطأ: $column - $e');
+          }
+        }
+      } catch (e) {
+        print('⚠️ جدول payments غير موجود: $e');
+      }
+    }
+
+    if (oldVersion < 3) {
+      try {
+        await db.execute('ALTER TABLE payments ADD COLUMN notes TEXT');
+      } catch (e) {
+        print('⚠️ عمود notes موجود مسبقاً');
+      }
+    }
+
+    if (oldVersion < 3) {
+      try {
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN prepaid_months INTEGER',
+        );
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN prepaid_start_month INTEGER',
+        );
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN prepaid_end_month INTEGER',
+        );
+      } catch (e) {
+        print('⚠️ الأعمدة موجودة مسبقاً');
+      }
     }
   }
 

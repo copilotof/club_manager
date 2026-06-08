@@ -3,11 +3,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'injection/dependency_injection.dart';
 import 'app/routes.dart';
 
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path_provider/path_provider.dart';
+
+/*
+Future<void> _deleteOldDatabase() async {
+  try {
+    final databasesPath = await getDatabasesPath();
+    final path = join(databasesPath, 'fight_club.db');
+    final exists = await databaseExists(path);
+    if (exists) {
+      await deleteDatabase(path);
+      print('✅ تم حذف قاعدة البيانات القديمة بنجاح');
+    }
+  } catch (e) {
+    print('⚠️ خطأ في حذف قاعدة البيانات: $e');
+  }
+}
+*/
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // await _deleteOldDatabase();
 
   // ✅ تهيئة التواريخ للغة العربية
   await initializeDateFormatting('ar', null);
@@ -15,12 +37,18 @@ void main() async {
   // تهيئة حقن التبعيات
   await setupDependencyInjection();
 
-  runApp(const MyApp());
+  final prefs = await SharedPreferences.getInstance();
+  final isFirstTime = prefs.getBool('onboarding_complete') ?? false;
+
+  runApp(MyApp(isFirstTime: isFirstTime));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+  final bool isFirstTime;
+  const MyApp({
+    super.key,
+    required this.isFirstTime, // التمرير إجباري هنا
+  });
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(

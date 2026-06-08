@@ -112,4 +112,69 @@ class PaymentRepository implements IPaymentRepository {
     }
     return totalOutstanding;
   }
+
+  // الحصول على مجموع دفعات معينة (للتأمين أو الشهر)
+  @override
+  Future<double> getTotalPaidForTarget({
+    required int studentId,
+    required String paymentType,
+    int? targetMonth,
+    int? targetYear,
+  }) async {
+    final db = await _db;
+
+    // بناء الاستعلام يدوياً لتجنب مشاكل الأعمدة
+    String query =
+        'SELECT SUM(amount) as total FROM payments WHERE student_id = ? AND payment_type = ?';
+    List<Object?> args = [studentId, paymentType];
+
+    if (targetMonth != null) {
+      // التحقق من وجود العمود target_month
+      try {
+        query += ' AND target_month = ?';
+        args.add(targetMonth);
+      } catch (e) {
+        print('⚠️ عمود target_month غير موجود: $e');
+      }
+    }
+
+    if (targetYear != null) {
+      // استخدام year بدلاً من target_year إذا كان العمود غير موجود
+      try {
+        query += ' AND target_year = ?';
+        args.add(targetYear);
+      } catch (e) {
+        print('⚠️ عمود target_year غير موجود، استخدام year بدلاً منه');
+        query += ' AND year = ?';
+      }
+    }
+
+    try {
+      final result = await db.rawQuery(query, args);
+      return (result.first['total'] as num?)?.toDouble() ?? 0;
+    } catch (e) {
+      print('❌ خطأ في الاستعلام: $e');
+      // استعلام بديل إذا فشل
+      final fallbackResult = await db.rawQuery(
+        'SELECT SUM(amount) as total FROM payments WHERE student_id = ? AND payment_type = ? AND year = ?',
+        [studentId, paymentType, targetYear ?? DateTime.now().year],
+      );
+      return (fallbackResult.first['total'] as num?)?.toDouble() ?? 0;
+    }
+  }
+
+  // تحديث حالة الدفعة (مكتملة أم لا)
+  Future<void> updatePaymentStatus(
+    int paymentId,
+    bool isFullyPaid,
+    double remaining,
+  ) async {
+    final db = await _db;
+    await db.update(
+      'payments',
+      {'is_fully_paid': isFullyPaid ? 1 : 0, 'remaining_amount': remaining},
+      where: 'id = ?',
+      whereArgs: [paymentId],
+    );
+  }
 }
