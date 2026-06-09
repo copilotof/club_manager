@@ -1,8 +1,10 @@
 // lib/presentation/screens/dashboard_screen.dart
-import 'package:fight_club_manager/presentation/screens/financial_dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'settings_screen.dart'; // ✅ أضف هذا الاستيراد
+import 'competitions_screen.dart'; // ✅ أضف هذا الاستيراد
+import 'financial_dashboard_screen.dart';
+import 'settings_screen.dart';
+import 'payments_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -13,7 +15,6 @@ class DashboardScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('لوحة التحكم'),
         actions: [
-          // ✅ زر الإعدادات
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -33,41 +34,107 @@ class DashboardScreen extends StatelessWidget {
         ],
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('مرحباً بك في لوحة التحكم'),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                context.push('/students');
-              },
-              child: const Text('إدارة الطلبة'),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                final today = DateTime.now();
-                context.push(
-                  '/attendance/1/${today.toIso8601String().split('T').first}',
-                );
-              },
-              child: const Text('تسجيل الحضور (تجريبي)'),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const FinancialDashboardScreen(),
-                  ),
-                );
-                //  context.push('/payments');
-              },
-              child: const Text('الدفعات المالية'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          // ✅ استخدام SingleChildScrollView للتجاوب
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'مرحباً بك في لوحة التحكم',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 30),
+
+              // زر إدارة الطلبة
+              _buildDashboardButton(
+                context,
+                icon: Icons.people,
+                label: 'إدارة الطلبة',
+                color: Colors.blue,
+                onPressed: () => context.push('/students'),
+              ),
+
+              const SizedBox(height: 12),
+
+              // زر تسجيل الحضور
+              _buildDashboardButton(
+                context,
+                icon: Icons.checklist,
+                label: 'تسجيل الحضور',
+                color: Colors.green,
+                onPressed: () {
+                  final today = DateTime.now();
+                  context.push(
+                    '/attendance/1/${today.toIso8601String().split('T').first}',
+                  );
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              // زر الدفعات المالية
+              _buildDashboardButton(
+                context,
+                icon: Icons.payments,
+                label: 'الدفعات المالية',
+                color: Colors.orange,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FinancialDashboardScreen(),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              // ✅ زر البطولات والمسابقات (جديد)
+              _buildDashboardButton(
+                context,
+                icon: Icons.emoji_events,
+                label: 'البطولات والمسابقات',
+                color: Colors.purple,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CompetitionsScreen(),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 30),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 28),
+        label: Text(label, style: const TextStyle(fontSize: 18)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );

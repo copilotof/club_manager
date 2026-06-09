@@ -136,6 +136,47 @@ class AppDatabase {
     FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
   )
 ''');
+
+    // أضف في دالة _createTables:
+    await db.execute('''
+  CREATE TABLE specialties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+  )
+''');
+
+    // في دالة _createTables، أضف:
+    await db.execute('''
+  CREATE TABLE competitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    location TEXT,
+    specialty_ids TEXT,
+    age_categories TEXT,
+    notes TEXT
+  )
+''');
+
+    await db.execute('''
+  CREATE TABLE participations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    specialty_id INTEGER NOT NULL,
+    age_category TEXT NOT NULL,
+    weight_category REAL NOT NULL,
+    result TEXT NOT NULL,
+    rank INTEGER,
+    medal_type TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+  )
+''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
