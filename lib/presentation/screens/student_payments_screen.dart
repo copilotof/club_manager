@@ -58,7 +58,7 @@ class _StudentPaymentsScreenState extends State<StudentPaymentsScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddPaymentScreenV2(
+        builder: (_) => AddPaymentScreen(
           studentId: widget.studentId,
           onPaymentAdded: () {
             _loadPayments();

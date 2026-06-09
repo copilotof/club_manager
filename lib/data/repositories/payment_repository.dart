@@ -68,6 +68,7 @@ class PaymentRepository implements IPaymentRepository {
   Future<void> deletePayment(int paymentId) async {
     final db = await _db;
     await db.delete('payments', where: 'id = ?', whereArgs: [paymentId]);
+    print('🗑️ تم حذف الدفعة رقم $paymentId');
   }
 
   @override

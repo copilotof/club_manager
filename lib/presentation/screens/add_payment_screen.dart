@@ -1,4 +1,4 @@
-// lib/presentation/screens/add_payment_screen_v2.dart
+// lib/presentation/screens/add_payment_screen.dart
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,12 +9,29 @@ import '../../data/repositories/payment_repository.dart';
 import '../../injection/dependency_injection.dart';
 import '../../core/widgets/custom_snackbar.dart';
 
-class AddPaymentScreenV2 extends StatefulWidget {
+// نموذج الأداة الرياضية
+class SportsItem {
+  final int id;
+  final String name;
+  final double price;
+
+  SportsItem({required this.id, required this.name, required this.price});
+
+  factory SportsItem.fromMap(Map<String, dynamic> map) {
+    return SportsItem(
+      id: map['id'],
+      name: map['name'],
+      price: map['price'].toDouble(),
+    );
+  }
+}
+
+class AddPaymentScreen extends StatefulWidget {
   final int studentId;
   final VoidCallback onPaymentAdded;
   final int? initialYear;
 
-  const AddPaymentScreenV2({
+  const AddPaymentScreen({
     super.key,
     required this.studentId,
     required this.onPaymentAdded,
@@ -22,15 +39,15 @@ class AddPaymentScreenV2 extends StatefulWidget {
   });
 
   @override
-  State<AddPaymentScreenV2> createState() => _AddPaymentScreenV2State();
+  State<AddPaymentScreen> createState() => _AddPaymentScreenState();
 }
 
-class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
+class _AddPaymentScreenState extends State<AddPaymentScreen> {
   // ==================== المتغيرات الأساسية ====================
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
-  final _reasonController = TextEditingController();
   final _notesController = TextEditingController();
+
   // تخزين الأشهر المكتملة لكل سنة
   Map<int, Map<int, bool>> _completedMonthsByYear = {};
 
@@ -40,6 +57,10 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
   DateTime _selectedDate = DateTime.now();
   bool _isGifted = false;
   bool _isSaving = false;
+
+  // للأدوات الرياضية (مستحقات إضافية)
+  List<SportsItem> _sportsItems = [];
+  SportsItem? _selectedSportsItem;
 
   // ==================== الإعدادات من SharedPreferences ====================
   double _monthlyFee = 2000;
@@ -61,14 +82,13 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
   }
 
   // ==================== تحميل الإعدادات ====================
-
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _monthlyFee = prefs.getDouble('monthly_fee') ?? 2000;
       _insuranceFee = prefs.getDouble('insurance_fee') ?? 1000;
 
-      // ✅ تحميل تخفيضات الدفع المسبق من الإعدادات
+      // تحميل تخفيضات الدفع المسبق
       final discountsJson = prefs.getStringList('discount_packages');
       if (discountsJson != null && discountsJson.isNotEmpty) {
         _discountPackages = discountsJson.map((json) {
@@ -79,7 +99,33 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
           };
         }).toList();
       } else {
-        _discountPackages = []; // ✅ فارغة إذا لم توجد في الإعدادات
+        _discountPackages = [];
+      }
+
+      // تحميل الأدوات الرياضية من الإعدادات
+      final sportsItemsJson = prefs.getStringList('sports_items');
+      if (sportsItemsJson != null && sportsItemsJson.isNotEmpty) {
+        _sportsItems = sportsItemsJson.map((json) {
+          final Map<String, dynamic> data = jsonDecode(json);
+          return SportsItem(
+            id: data['id'],
+            name: data['name'],
+            price: data['price'].toDouble(),
+          );
+        }).toList();
+      } else {
+        _sportsItems = [];
+      }
+    });
+  }
+
+  void _onSportsItemSelected(SportsItem? item) {
+    setState(() {
+      _selectedSportsItem = item;
+      if (item != null) {
+        _amountController.text = item.price.toString();
+      } else {
+        _amountController.text = '';
       }
     });
   }
@@ -89,12 +135,9 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
     final repo = PaymentRepository(localDb: getIt());
     final allPayments = await repo.getStudentPayments(widget.studentId);
 
-    // إعادة تعيين المتغيرات
     _monthlyPaid.clear();
     _completedMonths.clear();
     _insurancePaid.clear();
-
-    // ✅ متغير جديد: تخزين الأشهر المكتملة لكل سنة
     _completedMonthsByYear = {};
 
     for (var payment in allPayments) {
@@ -108,7 +151,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
             _monthlyPaid[month] = (_monthlyPaid[month] ?? 0) + payment.amount;
             if ((_monthlyPaid[month] ?? 0) >= _monthlyFee) {
               _completedMonths.add(month);
-              // ✅ تخزين للسنة الحالية
               if (!_completedMonthsByYear.containsKey(year)) {
                 _completedMonthsByYear[year] = {};
               }
@@ -117,21 +159,16 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
           }
         }
 
-        // ✅ دفعات مسبقة (عدة أشهر تمتد لسنة أو سنتين)
+        // دفعات مسبقة (عدة أشهر تمتد لسنة أو سنتين)
         if (payment.prepaidStartMonth != null &&
             payment.prepaidEndMonth != null) {
           int startMonth = payment.prepaidStartMonth!;
           int endMonth = payment.prepaidEndMonth!;
           int startYear = payment.targetYear ?? _selectedYear;
 
-          print(
-            '🎯 دفعة مسبقة: أشهر $startMonth إلى $endMonth (سنة البداية $startYear)',
-          );
-
           int currentMonth = startMonth;
           int currentYear = startYear;
 
-          // حساب عدد الأشهر في الدفعة المسبقة
           int monthsCount;
           if (endMonth >= startMonth) {
             monthsCount = endMonth - startMonth + 1;
@@ -148,15 +185,11 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
               actualYear++;
             }
 
-            print('   ✅ شهر $actualMonth/$actualYear مكتمل');
-
-            // ✅ تخزين لكل سنة على حدة
             if (!_completedMonthsByYear.containsKey(actualYear)) {
               _completedMonthsByYear[actualYear] = {};
             }
             _completedMonthsByYear[actualYear]![actualMonth] = true;
 
-            // إذا كانت السنة هي السنة المختارة حالياً
             if (actualYear == _selectedYear) {
               _completedMonths.add(actualMonth);
             }
@@ -181,12 +214,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
     _isInsuranceComplete =
         (_insurancePaid[_selectedYear] ?? 0) >= _insuranceFee;
 
-    // ✅ طباعة للتأكد
-    print('📊 الأشهر المكتملة حسب السنة:');
-    for (var year in _completedMonthsByYear.keys) {
-      print('   السنة $year: ${_completedMonthsByYear[year]!.keys.toList()}');
-    }
-
     setState(() {
       _updateAmountField();
     });
@@ -195,10 +222,8 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
   // ==================== تحديث حقل المبلغ ====================
   void _updateAmountField() {
     if (_paymentType == 'monthly') {
-      // ✅ التحقق من اكتمال الشهر في السنة الحالية
       bool isComplete =
           _completedMonthsByYear[_selectedYear]?[_selectedMonth] == true;
-
       if (isComplete) {
         _amountController.text = '0';
       } else {
@@ -214,7 +239,7 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
         _amountController.text = remaining > 0 ? remaining.toString() : '0';
       }
     } else if (_paymentType == 'extra') {
-      _amountController.text = '';
+      // لا نغير المبلغ هنا، بل يتم تعبئته من اختيار الأداة
     }
   }
 
@@ -230,7 +255,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
 
   // ==================== الدفع المسبق ====================
   Future<void> _applyPrepaidDiscount(int months, double discount) async {
-    // حساب الأشهر المشمولة
     int startMonth = _selectedMonth;
     int startYear = _selectedYear;
     List<int> targetMonths = [];
@@ -252,17 +276,14 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
     final endMonth = targetMonths.last;
     final endYear = targetYears.last;
 
-    // بناء نص الأشهر للعرض
     List<String> monthNames = [];
     for (int i = 0; i < targetMonths.length; i++) {
       monthNames.add('${_getMonthName(targetMonths[i])} ${targetYears[i]}');
     }
 
-    // حساب المبلغ
     double totalAmount = _monthlyFee * months;
     double discountedAmount = totalAmount * (1 - discount / 100);
 
-    // تأكيد
     bool? confirmed = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -348,7 +369,7 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
     }
   }
 
-  // ==================== حفظ دفعة عادية ====================
+  // ==================== حفظ دفعة ====================
   Future<void> _savePayment() async {
     if (_isCurrentTypeComplete && _paymentType != 'extra') {
       CustomSnackbar.showWarning(context, '✓ هذا الشهر مكتمل بالفعل');
@@ -365,6 +386,15 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
       setState(() => _isSaving = true);
 
       try {
+        String? extraReason;
+        if (_paymentType == 'extra') {
+          if (_selectedSportsItem != null) {
+            extraReason = _selectedSportsItem!.name;
+          } else {
+            extraReason = 'مستحقات إضافية';
+          }
+        }
+
         final payment = PaymentModel(
           studentId: widget.studentId,
           amount: amount,
@@ -373,7 +403,7 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
           month: _paymentType == 'monthly' ? _selectedMonth : null,
           year: _paymentType == 'monthly' ? _selectedYear : _selectedYear,
           isExtra: _paymentType == 'extra',
-          extraReason: _paymentType == 'extra' ? _reasonController.text : null,
+          extraReason: extraReason,
           isGifted: _isGifted,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           targetMonth: _paymentType == 'monthly' ? _selectedMonth : null,
@@ -442,7 +472,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
   @override
   void dispose() {
     _amountController.dispose();
-    _reasonController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -457,7 +486,7 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // نوع الدفعة
+            // 1. نوع الدفعة
             const Text(
               'نوع الدفعة',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -473,6 +502,9 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
               onSelectionChanged: (Set<String> selection) {
                 setState(() {
                   _paymentType = selection.first;
+                  if (_paymentType != 'extra') {
+                    _selectedSportsItem = null;
+                  }
                   _updateAmountField();
                 });
               },
@@ -480,8 +512,10 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
 
             const SizedBox(height: 16),
 
-            // تخفيضات الدفع المسبق
-            if (_paymentType == 'monthly' && _discountPackages.isNotEmpty)
+            // 2. تخفيضات الدفع المسبق (للاشتراك الشهري فقط)
+            if (_paymentType == 'monthly' &&
+                _discountPackages.isNotEmpty &&
+                !_isCurrentTypeComplete)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -494,48 +528,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                     spacing: 12,
                     children: _discountPackages.map((pkg) {
                       int months = pkg['months'] as int;
-                      double discount = (pkg['discount'] as num).toDouble();
-                      double discountedAmount =
-                          _monthlyFee * months * (1 - discount / 100);
-                      // ✅ تعطيل الزر إذا كان الشهر الحالي مكتملاً
-                      final isDisabled = _isCurrentTypeComplete;
-                      return ElevatedButton(
-                        onPressed: isDisabled
-                            ? null
-                            : () => _applyPrepaidDiscount(months, discount),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isDisabled
-                              ? Colors.grey.shade300
-                              : Colors.green.shade100,
-                          foregroundColor: isDisabled
-                              ? Colors.grey.shade600
-                              : Colors.green.shade800,
-                        ),
-                        child: Text(
-                          '$months أشهر (${discountedAmount.toStringAsFixed(0)} دج)',
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            /*          
-            // تخفيضات الدفع المسبق
-            if (_paymentType == 'monthly' && !_isCurrentTypeComplete)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'تخفيض الدفع المسبق',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    children: _discountPackages.map((pkg) {
-                      int months = pkg['months'] as int;
-                      // ✅ تحويل discount إلى double بشكل آمن
                       double discount = (pkg['discount'] as num).toDouble();
                       double discountedAmount =
                           _monthlyFee * months * (1 - discount / 100);
@@ -555,43 +547,164 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                   const SizedBox(height: 16),
                 ],
               ),
-*/
-            // المبلغ
-            TextFormField(
-              controller: _amountController,
-              decoration: InputDecoration(
-                labelText: 'المبلغ (دج)',
-                prefixIcon: const Icon(Icons.attach_money),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              keyboardType: TextInputType.number,
-              readOnly: _isCurrentTypeComplete && _paymentType != 'extra',
-            ),
 
-            const SizedBox(height: 16),
-
-            // التاريخ
-            InkWell(
-              onTap: _selectDate,
-              child: InputDecorator(
+            // 3. المبلغ (للمستحقات الإضافية نضعه داخل القسم الخاص)
+            if (_paymentType != 'extra') ...[
+              TextFormField(
+                controller: _amountController,
                 decoration: InputDecoration(
-                  labelText: 'تاريخ الدفع',
-                  prefixIcon: const Icon(Icons.calendar_today),
+                  labelText: 'المبلغ (دج)',
+                  prefixIcon: const Icon(Icons.attach_money),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Text(
-                  '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                keyboardType: TextInputType.number,
+                readOnly: _isCurrentTypeComplete && _paymentType != 'extra',
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 4. مستحقات إضافية (كل الحقول موجودة هنا)
+            if (_paymentType == 'extra') ...[
+              // قائمة الأدوات الرياضية
+              DropdownButtonFormField<SportsItem>(
+                decoration: const InputDecoration(
+                  labelText: 'اختر الأداة الرياضية',
+                  prefixIcon: Icon(Icons.shopping_bag),
+                  border: OutlineInputBorder(),
+                ),
+                value: _selectedSportsItem,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<SportsItem>(
+                    value: null,
+                    child: Text('-- اختر أداة --'),
+                  ),
+                  ..._sportsItems.map((item) {
+                    return DropdownMenuItem<SportsItem>(
+                      value: item,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(item.name),
+                          Text(
+                            '${item.price.toStringAsFixed(0)} دج',
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: _onSportsItemSelected,
+              ),
+              const SizedBox(height: 16),
+
+              // المبلغ
+              TextFormField(
+                controller: _amountController,
+                decoration: const InputDecoration(
+                  labelText: 'المبلغ (دج)',
+                  prefixIcon: Icon(Icons.attach_money),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'المبلغ مطلوب';
+                  }
+                  if (double.tryParse(value) == null) {
+                    return 'يرجى إدخال رقم صحيح';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 5. التاريخ (للمستحقات الإضافية نضعه داخل القسم الخاص)
+            if (_paymentType != 'extra') ...[
+              InkWell(
+                onTap: _selectDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'تاريخ الدفع',
+                    prefixIcon: const Icon(Icons.calendar_today),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                  ),
                 ),
               ),
+              const SizedBox(height: 16),
+            ],
+
+            // 6. الإهداء (للمستحقات الإضافية نضعه داخل القسم الخاص)
+            if (_paymentType != 'extra') ...[
+              SwitchListTile(
+                title: const Text('إهداء'),
+                subtitle: const Text('تفعيل إذا كانت المستحقات مجانية للطالب'),
+                value: _isGifted,
+                onChanged: (v) => setState(() => _isGifted = v),
+                activeColor: const Color(0xFFE53935),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 7. الإهداء للمستحقات الإضافية
+            if (_paymentType == 'extra') ...[
+              SwitchListTile(
+                title: const Text('إهداء'),
+                subtitle: const Text('تفعيل إذا كانت المستحقات مجانية للطالب'),
+                value: _isGifted,
+                onChanged: (v) => setState(() => _isGifted = v),
+                activeColor: const Color(0xFFE53935),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 8. التاريخ للمستحقات الإضافية
+            if (_paymentType == 'extra') ...[
+              InkWell(
+                onTap: _selectDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'تاريخ الدفع',
+                    prefixIcon: const Icon(Icons.calendar_today),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 9. الملاحظات (للجميع)
+            TextFormField(
+              controller: _notesController,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات',
+                prefixIcon: Icon(Icons.note),
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
             ),
 
-            // اختيار الشهر والسنة (للاشتراك الشهري فقط)
+            const SizedBox(height: 16),
+
+            // 10. اختيار الشهر والسنة (للاشتراك الشهري فقط)
             if (_paymentType == 'monthly') ...[
-              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -616,7 +729,6 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                         isExpanded: true,
                         items: List.generate(12, (index) {
                           int month = index + 1;
-                          // ✅ التحقق من اكتمال الشهر في السنة الحالية
                           bool isCompleted =
                               _completedMonthsByYear[_selectedYear]?[month] ==
                               true;
@@ -652,51 +764,35 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                       ),
                     ),
                   ),
-
                   const SizedBox(width: 12),
-
                   Expanded(
-                    child: Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 0,
-                        maxWidth: double.infinity,
+                    child: DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(
+                        labelText: 'السنة',
+                        border: OutlineInputBorder(),
                       ),
-                      child: DropdownButtonFormField<int>(
-                        decoration: InputDecoration(
-                          labelText: 'السنة',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
-                          isDense: true,
-                        ),
-                        value: _selectedYear,
-                        isExpanded: true,
-                        items: _getAvailableYears().map((year) {
-                          return DropdownMenuItem(
-                            value: year,
-                            child: Text(year.toString()),
-                          );
-                        }).toList(),
-                        onChanged: (value) async {
-                          setState(() {
-                            _selectedYear = value!;
-                          });
-                          await _loadStudentData();
-                        },
-                      ),
+                      value: _selectedYear,
+                      items: _getAvailableYears().map((year) {
+                        return DropdownMenuItem(
+                          value: year,
+                          child: Text(year.toString()),
+                        );
+                      }).toList(),
+                      onChanged: (value) async {
+                        setState(() {
+                          _selectedYear = value!;
+                        });
+                        await _loadStudentData();
+                      },
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
             ],
 
-            // اختيار السنة للتأمين
+            // 11. اختيار السنة للتأمين
             if (_paymentType == 'insurance') ...[
-              const SizedBox(height: 16),
               DropdownButtonFormField<int>(
                 decoration: const InputDecoration(
                   labelText: 'السنة',
@@ -716,45 +812,10 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                   await _loadStudentData();
                 },
               ),
-            ],
-
-            // مستحقات إضافية
-            if (_paymentType == 'extra') ...[
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _reasonController,
-                decoration: const InputDecoration(
-                  labelText: 'السبب',
-                  prefixIcon: Icon(Icons.receipt),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) => v == null || v.isEmpty ? 'السبب مطلوب' : null,
-              ),
             ],
 
-            const SizedBox(height: 16),
-
-            SwitchListTile(
-              title: const Text('إهداء'),
-              value: _isGifted,
-              onChanged: (v) => setState(() => _isGifted = v),
-              activeColor: const Color(0xFFE53935),
-            ),
-
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'ملاحظات',
-                prefixIcon: Icon(Icons.note),
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-
-            const SizedBox(height: 24),
-
+            // 12. زر الحفظ
             ElevatedButton(
               onPressed: (_isSaving || _isCurrentTypeComplete)
                   ? null
@@ -775,6 +836,7 @@ class _AddPaymentScreenV2State extends State<AddPaymentScreenV2> {
                   : Text(_isCurrentTypeComplete ? '✓ مكتمل' : 'تسجيل الدفعة'),
             ),
 
+            // رسالة اكتمال الدفعة
             if (_isCurrentTypeComplete && _paymentType != 'extra')
               Padding(
                 padding: const EdgeInsets.only(top: 8),

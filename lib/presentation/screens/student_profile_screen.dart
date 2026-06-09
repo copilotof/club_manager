@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/widgets/custom_snackbar.dart';
 import '../../data/datasources/local/app_database.dart';
 import '../../data/models/payment_model.dart';
@@ -36,9 +37,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
   StudentModel? _student;
   bool _isLoading = true;
+  bool _showOnlyExtra = false; // ✅ متغير جديد لتصفية المستحقات الإضافية
 
   int _selectedYear = DateTime.now().year;
   bool _showOnlyUnpaid = false;
+
+  double _monthlyFee = 2000;
+  double _insuranceFee = 1000;
 
   @override
   void initState() {
@@ -46,7 +51,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     _studentBloc = StudentBloc(getIt());
     _tabController = TabController(length: 6, vsync: this);
     _studentBloc.add(LoadStudentsEvent());
-    // ✅ استدعاء دالة التحقق
+    _loadFees(); // ✅ تحميل القيم من الإعدادات
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkDatabaseStructure();
     });
@@ -160,6 +165,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         );
       }
     }
+  }
+
+  Future<void> _loadFees() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _monthlyFee = prefs.getDouble('monthly_fee') ?? 2000;
+      _insuranceFee = prefs.getDouble('insurance_fee') ?? 1000;
+    });
   }
 
   @override
@@ -378,6 +391,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 ],
               ),
               const SizedBox(height: 12),
+              /*
               // فلتر المبالغ غير المسددة
               FilterChip(
                 label: const Text('غير مكتملة'),
@@ -389,6 +403,41 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   });
                 },
                 selectedColor: const Color(0xFFE53935).withOpacity(0.2),
+              ),
+              */
+              // صف الأزرار
+              Wrap(
+                spacing: 8,
+                children: [
+                  // فلتر المبالغ غير المسددة
+                  FilterChip(
+                    label: const Text('غير مكتملة'),
+                    selected: _showOnlyUnpaid,
+                    onSelected: (value) {
+                      setState(() {
+                        _showOnlyUnpaid = value;
+                        if (value) _showOnlyExtra = false; // إلغاء الفلتر الآخر
+                        _paymentsRefresh = !_paymentsRefresh;
+                      });
+                    },
+                    selectedColor: const Color(0xFFE53935).withOpacity(0.2),
+                  ),
+                  // ✅ فلتر المستحقات الإضافية
+                  FilterChip(
+                    label: const Text('مستحقات إضافية'),
+                    selected: _showOnlyExtra,
+                    onSelected: (value) {
+                      setState(() {
+                        _showOnlyExtra = value;
+                        if (value)
+                          _showOnlyUnpaid = false; // إلغاء الفلتر الآخر
+                        _paymentsRefresh = !_paymentsRefresh;
+                      });
+                    },
+                    selectedColor: Colors.orange.withOpacity(0.2),
+                    avatar: const Icon(Icons.shopping_bag, size: 16),
+                  ),
+                ],
               ),
             ],
           ),
@@ -520,6 +569,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
+  /*
   Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
     final payments = await _getStudentPayments();
 
@@ -532,13 +582,261 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           .toList();
     }
 
-    // تصفية المبالغ غير المسددة (سيتم تطويرها لاحقاً)
+    // ✅ تصفية المبالغ غير المكتملة (نسخة مبسطة لا تحتاج متغيرات خارجية)
     if (_showOnlyUnpaid) {
-      // مؤقت: عرض الدفعات الجزئية فقط
-      filtered = filtered.where((p) => p.isPartial == true).toList();
+      filtered = filtered.where((p) {
+        // المستحقات الإضافية لا تظهر في التصفية
+        if (p.paymentType == 'extra') return false;
+
+        // الدفعة غير مكتملة إذا:
+        // 1. هي دفعة جزئية
+        // 2. أو لديها مبلغ متبقي
+        // 3. أو لم يتم دفعها بالكامل
+        return p.isPartial == true ||
+            (p.remainingAmount != null && p.remainingAmount! > 0) ||
+            p.isFullyPaid == false;
+      }).toList();
     }
 
     return filtered;
+  }
+*/
+  /*
+  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
+    final payments = await _getStudentPayments();
+
+    var filtered = payments;
+
+    // تصفية حسب السنة
+    if (_selectedYear != 0) {
+      filtered = filtered
+          .where((p) => p.paymentDate.year == _selectedYear)
+          .toList();
+    }
+
+    // ✅ تصفية المبالغ غير المكتملة (بدون المستحقات الإضافية)
+ 
+    if (_showOnlyUnpaid) {
+      // أولاً: نجمع كل الدفعات المرتبطة بنفس الهدف (نفس الشهر أو نفس السنة)
+      Map<String, List<PaymentModel>> groupedPayments = {};
+
+      for (var p in filtered) {
+        // تجاهل المستحقات الإضافية تماماً
+        if (p.paymentType == 'extra') continue;
+
+        String key;
+        if (p.paymentType == 'monthly') {
+          key = 'monthly_${p.targetYear}_${p.targetMonth}';
+        } else {
+          key = 'insurance_${p.targetYear}';
+        }
+
+        groupedPayments.putIfAbsent(key, () => []);
+        groupedPayments[key]!.add(p);
+      }
+
+      // تحديد الدفعات غير المكتملة
+      Set<String> incompleteKeys = {};
+
+      for (var entry in groupedPayments.entries) {
+        final key = entry.key;
+        final paymentsGroup = entry.value;
+        final totalAmount = paymentsGroup.fold<double>(
+          0,
+          (sum, p) => sum + p.amount,
+        );
+
+        double requiredAmount;
+        if (key.startsWith('monthly')) {
+          requiredAmount = 2000; // القيمة الافتراضية، يمكن جلبها من الإعدادات
+        } else {
+          requiredAmount = 1000; // القيمة الافتراضية، يمكن جلبها من الإعدادات
+        }
+
+        // إذا كان المبلغ الإجمالي أقل من المطلوب، فهي غير مكتملة
+        if (totalAmount < requiredAmount) {
+          incompleteKeys.add(key);
+        }
+      }
+
+      // تصفية الدفعات التي تظهر فقط تلك غير المكتملة
+      filtered = filtered.where((p) {
+        if (p.paymentType == 'extra') return false;
+
+        String key;
+        if (p.paymentType == 'monthly') {
+          key = 'monthly_${p.targetYear}_${p.targetMonth}';
+        } else {
+          key = 'insurance_${p.targetYear}';
+        }
+
+        return incompleteKeys.contains(key);
+      }).toList();
+    }
+
+
+    return filtered;
+  }
+
+  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
+    final payments = await _getStudentPayments();
+
+    var filtered = payments;
+
+    // تصفية حسب السنة
+    if (_selectedYear != 0) {
+      filtered = filtered
+          .where((p) => p.paymentDate.year == _selectedYear)
+          .toList();
+    }
+
+    // ✅ فلتر المستحقات الإضافية
+    if (_showOnlyExtra) {
+      filtered = filtered.where((p) => p.paymentType == 'extra').toList();
+      return filtered;
+    }
+
+    // ✅ فلتر المبالغ غير المكتملة (بدون المستحقات الإضافية)
+    if (_showOnlyUnpaid) {
+      filtered = filtered.where((p) {
+        // استبعاد المستحقات الإضافية
+        if (p.paymentType == 'extra') return false;
+
+        // تجميع الدفعات حسب الهدف
+        Map<String, double> totals = {};
+        Map<String, String> types = {};
+
+        for (var p in filtered) {
+          String key;
+          if (p.paymentType == 'monthly') {
+            key = 'monthly_${p.targetYear}_${p.targetMonth}';
+            types[key] = 'monthly';
+          } else {
+            key = 'insurance_${p.targetYear}';
+            types[key] = 'insurance';
+          }
+          totals[key] = (totals[key] ?? 0) + p.amount;
+        }
+
+        // حساب المبالغ غير المكتملة
+        Set<String> incompleteKeys = {};
+        for (var entry in totals.entries) {
+          final total = entry.value;
+          final required = types[entry.key] == 'monthly'
+              ? _monthlyFee
+              : _insuranceFee;
+          if (total < required) {
+            incompleteKeys.add(entry.key);
+          }
+        }
+
+        String key;
+        if (p.paymentType == 'monthly') {
+          key = 'monthly_${p.targetYear}_${p.targetMonth}';
+        } else {
+          key = 'insurance_${p.targetYear}';
+        }
+        return incompleteKeys.contains(key);
+      }).toList();
+    }
+
+    return filtered;
+  }
+*/
+
+  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
+    final payments = await _getStudentPayments();
+
+    var filtered = payments;
+
+    // تصفية حسب السنة
+    if (_selectedYear != 0) {
+      filtered = filtered
+          .where((p) => p.paymentDate.year == _selectedYear)
+          .toList();
+    }
+
+    // ✅ فلتر المستحقات الإضافية
+    if (_showOnlyExtra) {
+      filtered = filtered.where((p) => p.paymentType == 'extra').toList();
+      return filtered;
+    }
+
+    // ✅ فلتر المبالغ غير المكتملة
+    if (_showOnlyUnpaid) {
+      // تجميع الدفعات حسب الهدف (شهرية أو تأمين)
+      Map<String, double> totals = {};
+      Map<String, String> types = {};
+
+      for (var p in filtered) {
+        String key;
+        if (p.paymentType == 'monthly') {
+          // مفتاح للاشتراك الشهري: الشهر + السنة
+          key = 'monthly_${p.targetYear ?? p.year}_${p.targetMonth ?? p.month}';
+          types[key] = 'monthly';
+        } else if (p.paymentType == 'insurance') {
+          // مفتاح للتأمين: السنة فقط
+          key = 'insurance_${p.targetYear ?? p.year}';
+          types[key] = 'insurance';
+        } else {
+          continue; // تجاهل المستحقات الإضافية
+        }
+        totals[key] = (totals[key] ?? 0) + p.amount;
+      }
+
+      // تحديد المفاتيح غير المكتملة
+      Set<String> incompleteKeys = {};
+      for (var entry in totals.entries) {
+        final key = entry.key;
+        final total = entry.value;
+        final requiredAmount = types[key] == 'monthly'
+            ? _monthlyFee
+            : _insuranceFee;
+
+        if (total < requiredAmount) {
+          incompleteKeys.add(key);
+          print('📊 غير مكتمل: $key = $total / $requiredAmount');
+        } else {
+          print('✅ مكتمل: $key = $total / $requiredAmount');
+        }
+      }
+
+      // تصفية الدفعات التي تظهر
+      filtered = filtered.where((p) {
+        // استبعاد المستحقات الإضافية من التصفية
+        if (p.paymentType == 'extra') return false;
+
+        String key;
+        if (p.paymentType == 'monthly') {
+          key = 'monthly_${p.targetYear ?? p.year}_${p.targetMonth ?? p.month}';
+        } else if (p.paymentType == 'insurance') {
+          key = 'insurance_${p.targetYear ?? p.year}';
+        } else {
+          return false;
+        }
+
+        return incompleteKeys.contains(key);
+      }).toList();
+    }
+
+    return filtered;
+  }
+
+  bool _isPaymentIncomplete(PaymentModel p) {
+    // اعتماداً على البيانات الموجودة في الدفعة نفسها
+    if (p.paymentType == 'monthly') {
+      return p.isPartial == true || p.isFullyPaid == false;
+    }
+
+    if (p.paymentType == 'insurance') {
+      return p.isPartial == true || p.isFullyPaid == false;
+    }
+
+    if (p.paymentType == 'extra') {
+      return false; // المستحقات الإضافية لا تظهر
+    }
+
+    return false;
   }
 
   void _deletePayment(int paymentId) async {
@@ -998,7 +1296,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddPaymentScreenV2(
+        builder: (_) => AddPaymentScreen(
           studentId: widget.studentId,
           onPaymentAdded: () {
             setState(() {
@@ -1143,6 +1441,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             ),
           ],
         ),
+
+        /*
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1159,7 +1459,77 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             ),
           ],
         ),
+       */
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ✅ المبلغ
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${payment.amount.toStringAsFixed(0)} دج',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: payment.isGifted
+                        ? Colors.purple
+                        : const Color(0xFFE53935),
+                  ),
+                ),
+              ],
+            ),
+            // ✅ زر حذف الدفعة
+            IconButton(
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 20,
+                color: Colors.red,
+              ),
+              onPressed: () => _confirmDeletePayment(payment),
+              tooltip: 'حذف الدفعة',
+            ),
+          ],
+        ),
+
         onTap: () => _showPaymentDetails(payment),
+      ),
+    );
+  }
+
+  void _confirmDeletePayment(PaymentModel payment) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: Text(
+          'هل أنت متأكد من حذف دفعة "${_formatPaymentName(payment)}" بقيمة ${payment.amount.toStringAsFixed(0)} دج؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final repo = PaymentRepository(localDb: getIt());
+              await repo.deletePayment(payment.id!);
+
+              // إعادة تحميل البيانات
+              _studentBloc.add(LoadStudentsEvent());
+              setState(() {
+                _paymentsRefresh = !_paymentsRefresh;
+              });
+
+              if (!mounted) return;
+              Navigator.pop(context);
+              CustomSnackbar.showSuccess(context, 'تم حذف الدفعة بنجاح');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
       ),
     );
   }

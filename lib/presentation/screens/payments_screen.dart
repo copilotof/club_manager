@@ -224,7 +224,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => AddPaymentScreenV2(
+                            builder: (_) => AddPaymentScreen(
                               studentId:
                                   widget.studentId ?? 0, // ✅ تم الإصلاح هنا
                               onPaymentAdded: () {
@@ -306,7 +306,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => AddPaymentScreenV2(
+              builder: (_) => AddPaymentScreen(
                 studentId: widget.studentId ?? 0, // ✅ تم الإصلاح هنا أيضاً
                 onPaymentAdded: () {
                   if (widget.studentId != null) {
