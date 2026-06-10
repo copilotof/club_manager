@@ -14,6 +14,10 @@ class CompetitionRepository {
   Future<List<CompetitionModel>> getAllCompetitions() async {
     final db = await _db;
     final result = await db.query('competitions', orderBy: 'start_date DESC');
+    print('📊 عدد البطولات في قاعدة البيانات: ${result.length}');
+    for (var row in result) {
+      print('   - ${row['name']} (${row['start_date']})');
+    }
     return result.map((map) => CompetitionModel.fromMap(map)).toList();
   }
 

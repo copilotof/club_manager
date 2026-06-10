@@ -11,7 +11,11 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  // ==================== الإعدادات المالية ====================
   final _monthlyFeeController = TextEditingController();
   final _insuranceFeeController = TextEditingController();
   final _sessionsPerWeekController = TextEditingController();
@@ -39,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     _loadSettings();
   }
 
@@ -275,6 +280,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
+    if (minAge >= maxAge) {
+      CustomSnackbar.showError(
+        context,
+        'العمر الأصغر يجب أن يكون أقل من العمر الأكبر',
+      );
+      return;
+    }
+
     final specialtyIndex = _specialties.indexWhere((s) => s.id == specialtyId);
     if (specialtyIndex != -1) {
       setState(() {
@@ -301,6 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _monthlyFeeController.dispose();
     _insuranceFeeController.dispose();
     _sessionsPerWeekController.dispose();
@@ -324,6 +338,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('الإعدادات'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '💰 مالي', icon: Icon(Icons.attach_money)),
+            Tab(text: '🛒 أدوات', icon: Icon(Icons.shopping_bag)),
+            Tab(text: '🏷️ تخفيضات', icon: Icon(Icons.local_offer)),
+            Tab(text: '🥋 رياضة', icon: Icon(Icons.sports_martial_arts)),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
@@ -332,309 +355,351 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // ==================== الإعدادات المالية الأساسية ====================
-          _buildSectionCard(
-            title: 'الإعدادات المالية الأساسية',
-            icon: Icons.attach_money,
-            children: [
-              _buildTextField(
-                'قيمة الاشتراك الشهري (دج)',
-                _monthlyFeeController,
-                Icons.calendar_today,
-              ),
-              const SizedBox(height: 12),
-              _buildTextField(
-                'حقوق التسجيل السنوية (دج)',
-                _insuranceFeeController,
-                Icons.security,
-              ),
-              const SizedBox(height: 12),
-              _buildTextField(
-                'عدد الحصص في الأسبوع',
-                _sessionsPerWeekController,
-                Icons.fitness_center,
-              ),
-            ],
-          ),
+          // تبويب 1: الإعدادات المالية
+          _buildFinancialTab(),
 
-          const SizedBox(height: 16),
+          // تبويب 2: الأدوات الرياضية
+          _buildSportsItemsTab(),
 
-          // ==================== الأدوات الرياضية ====================
-          _buildSectionCard(
-            title: 'الأدوات الرياضية',
-            icon: Icons.shopping_bag,
-            children: [
-              ..._sportsItems.map(
-                (item) => ListTile(
-                  leading: const Icon(Icons.shopping_bag, color: Colors.orange),
-                  title: Text(item.name),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${item.price.toStringAsFixed(0)} دج',
-                        style: const TextStyle(color: Colors.green),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _removeSportsItem(item.id),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const Divider(),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _newItemNameController,
-                      decoration: const InputDecoration(
-                        hintText: 'اسم الأداة',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 1,
-                    child: TextField(
-                      controller: _newItemPriceController,
-                      decoration: const InputDecoration(
-                        hintText: 'السعر',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _addSportsItem,
-                    icon: const Icon(
-                      Icons.add_circle,
-                      color: Color(0xFFE53935),
-                      size: 32,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          // تبويب 3: تخفيضات الدفع المسبق
+          _buildDiscountsTab(),
 
-          const SizedBox(height: 16),
+          // تبويب 4: الاختصاصات والفئات العمرية
+          _buildSportsSettingsTab(),
+        ],
+      ),
+    );
+  }
 
-          // ==================== تخفيضات الدفع المسبق ====================
-          _buildSectionCard(
-            title: 'تخفيضات الدفع المسبق',
-            icon: Icons.local_offer,
-            children: [
-              ..._discountPackages.map(
-                (pkg) => ListTile(
-                  leading: const Icon(Icons.percent, color: Colors.green),
-                  title: Text('${pkg.months} أشهر'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${pkg.discount.toStringAsFixed(0)}% تخفيض',
-                        style: const TextStyle(color: Colors.green),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _removeDiscountPackage(pkg.months),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const Divider(),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _newMonthsController,
-                      decoration: const InputDecoration(
-                        hintText: 'عدد الأشهر (3 أو 6)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _newDiscountController,
-                      decoration: const InputDecoration(
-                        hintText: 'نسبة التخفيض (%)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _addDiscountPackage,
-                    icon: const Icon(
-                      Icons.add_circle,
-                      color: Color(0xFFE53935),
-                      size: 32,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+  // ==================== تبويب الإعدادات المالية ====================
+  Widget _buildFinancialTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'الإعدادات المالية الأساسية',
+          icon: Icons.attach_money,
+          children: [
+            _buildTextField(
+              'قيمة الاشتراك الشهري (دج)',
+              _monthlyFeeController,
+              Icons.calendar_today,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              'حقوق التسجيل السنوية (دج)',
+              _insuranceFeeController,
+              Icons.security,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              'عدد الحصص في الأسبوع',
+              _sessionsPerWeekController,
+              Icons.fitness_center,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-          const SizedBox(height: 16),
-
-          // ==================== الإعدادات الرياضية ====================
-          _buildSectionCard(
-            title: 'الإعدادات الرياضية',
-            icon: Icons.sports_martial_arts,
-            children: [
-              ..._specialties.map(
-                (specialty) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ExpansionTile(
-                    title: Text(specialty.name),
-                    trailing: IconButton(
+  // ==================== تبويب الأدوات الرياضية ====================
+  Widget _buildSportsItemsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'الأدوات الرياضية',
+          icon: Icons.shopping_bag,
+          children: [
+            ..._sportsItems.map(
+              (item) => ListTile(
+                leading: const Icon(Icons.shopping_bag, color: Colors.orange),
+                title: Text(item.name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${item.price.toStringAsFixed(0)} دج',
+                      style: const TextStyle(color: Colors.green),
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _removeSpecialty(specialty.id),
+                      onPressed: () => _removeSportsItem(item.id),
                     ),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'الفئات العمرية',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 8),
-                            ...specialty.ageCategories.map(
-                              (category) => Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                child: ListTile(
-                                  title: Text(category.name),
-                                  subtitle: Text(
-                                    '${category.minAge} - ${category.maxAge} سنة',
-                                  ),
-                                  trailing: IconButton(
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      size: 20,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () => _removeAgeCategory(
-                                      specialty.id,
-                                      category.name,
-                                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_sportsItems.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'لا توجد أدوات مسجلة',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: _newItemNameController,
+                    decoration: const InputDecoration(
+                      hintText: 'اسم الأداة',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 1,
+                  child: TextField(
+                    controller: _newItemPriceController,
+                    decoration: const InputDecoration(
+                      hintText: 'السعر',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _addSportsItem,
+                  icon: const Icon(
+                    Icons.add_circle,
+                    color: Color(0xFFE53935),
+                    size: 32,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ==================== تبويب تخفيضات الدفع المسبق ====================
+  Widget _buildDiscountsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'تخفيضات الدفع المسبق',
+          icon: Icons.local_offer,
+          children: [
+            ..._discountPackages.map(
+              (pkg) => ListTile(
+                leading: const Icon(Icons.percent, color: Colors.green),
+                title: Text('${pkg.months} أشهر'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${pkg.discount.toStringAsFixed(0)}% تخفيض',
+                      style: const TextStyle(color: Colors.green),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _removeDiscountPackage(pkg.months),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_discountPackages.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'لا توجد تخفيضات مسجلة',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newMonthsController,
+                    decoration: const InputDecoration(
+                      hintText: 'عدد الأشهر (3 أو 6)',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _newDiscountController,
+                    decoration: const InputDecoration(
+                      hintText: 'نسبة التخفيض (%)',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _addDiscountPackage,
+                  icon: const Icon(
+                    Icons.add_circle,
+                    color: Color(0xFFE53935),
+                    size: 32,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ==================== تبويب الإعدادات الرياضية (للبطولات) ====================
+  Widget _buildSportsSettingsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'الاختصاصات والفئات العمرية',
+          icon: Icons.sports_martial_arts,
+          children: [
+            ..._specialties.map(
+              (specialty) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ExpansionTile(
+                  title: Text(
+                    specialty.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _removeSpecialty(specialty.id),
+                  ),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'الفئات العمرية',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          ...specialty.ageCategories.map(
+                            (category) => Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                title: Text(category.name),
+                                subtitle: Text(
+                                  '${category.minAge} - ${category.maxAge} سنة',
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete, size: 20),
+                                  onPressed: () => _removeAgeCategory(
+                                    specialty.id,
+                                    category.name,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: TextField(
-                                    controller: _newAgeCategoryController,
-                                    decoration: const InputDecoration(
-                                      hintText: 'اسم الفئة',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 60,
-                                  child: TextField(
-                                    controller: _newMinAgeController,
-                                    decoration: const InputDecoration(
-                                      hintText: 'من',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Text('إلى'),
-                                const SizedBox(width: 4),
-                                SizedBox(
-                                  width: 60,
-                                  child: TextField(
-                                    controller: _newMaxAgeController,
-                                    decoration: const InputDecoration(
-                                      hintText: 'إلى',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () =>
-                                      _addAgeCategory(specialty.id),
-                                  icon: const Icon(
-                                    Icons.add_circle,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ],
+                          ),
+                          if (specialty.ageCategories.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Text(
+                                'لا توجد فئات عمرية',
+                                style: TextStyle(color: Colors.grey),
+                              ),
                             ),
-                          ],
-                        ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: TextField(
+                                  controller: _newAgeCategoryController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'اسم الفئة',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 60,
+                                child: TextField(
+                                  controller: _newMinAgeController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'من',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text('إلى'),
+                              const SizedBox(width: 4),
+                              SizedBox(
+                                width: 60,
+                                child: TextField(
+                                  controller: _newMaxAgeController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'إلى',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _addAgeCategory(specialty.id),
+                                icon: const Icon(
+                                  Icons.add_circle,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _newSpecialtyController,
-                      decoration: const InputDecoration(
-                        hintText: 'اختصاص جديد (مثال: واكو حلبة)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _addSpecialty,
-                    icon: const Icon(
-                      Icons.add_circle,
-                      color: Color(0xFFE53935),
-                      size: 32,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // زر حفظ في الأسفل
-          ElevatedButton(
-            onPressed: _saveSettings,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE53935),
-              minimumSize: const Size(double.infinity, 50),
             ),
-            child: const Text('حفظ الإعدادات', style: TextStyle(fontSize: 16)),
-          ),
-
-          const SizedBox(height: 32),
-        ],
-      ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newSpecialtyController,
+                    decoration: const InputDecoration(
+                      hintText: 'اختصاص جديد (مثال: واكو حلبة)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _addSpecialty,
+                  icon: const Icon(
+                    Icons.add_circle,
+                    color: Color(0xFFE53935),
+                    size: 32,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
     );
   }
 

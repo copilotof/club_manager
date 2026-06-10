@@ -1,4 +1,6 @@
 // lib/data/models/participation_model.dart
+import 'package:flutter/material.dart';
+
 class ParticipationModel {
   final int? id;
   final int competitionId;
@@ -38,6 +40,21 @@ class ParticipationModel {
         return '📋 مشاركة';
       default:
         return result;
+    }
+  }
+
+  Color get resultColor {
+    switch (result) {
+      case 'gold':
+        return Colors.amber;
+      case 'silver':
+        return Colors.grey;
+      case 'bronze':
+        return Colors.brown;
+      case 'participation':
+        return Colors.blue;
+      default:
+        return Colors.grey;
     }
   }
 

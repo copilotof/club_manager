@@ -5,6 +5,7 @@ import '../../data/repositories/competition_repository.dart';
 import '../../injection/dependency_injection.dart';
 import '../../core/widgets/custom_snackbar.dart';
 import 'add_competition_screen.dart';
+import 'competition_details_screen.dart';
 
 class CompetitionsScreen extends StatefulWidget {
   const CompetitionsScreen({super.key});
@@ -27,6 +28,7 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
     _loadCompetitions();
   }
 
+  /* 
   Future<void> _loadCompetitions() async {
     setState(() {
       _isLoading = true;
@@ -39,6 +41,30 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      CustomSnackbar.showError(context, 'خطأ في تحميل البطولات');
+    }
+  }
+ */
+  Future<void> _loadCompetitions() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final competitions = await _repository.getAllCompetitions();
+      print('📊 تم جلب ${competitions.length} بطولة');
+      for (var c in competitions) {
+        print('   - ${c.name} (${c.startDate})');
+      }
+      setState(() {
+        _competitions = competitions;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ خطأ في تحميل البطولات: $e');
       setState(() {
         _isLoading = false;
       });
@@ -87,10 +113,39 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Future<void> _addSampleCompetition() async {
+      final sampleCompetition = CompetitionModel(
+        name: 'بطولة تجريبية للاختبار',
+        type: 'national',
+        startDate: DateTime.now().add(const Duration(days: 30)),
+        endDate: DateTime.now().add(const Duration(days: 32)),
+        location: 'قصر الرياضات - الجزائر',
+        specialtyIds: [1, 2],
+        ageCategories: ['أكابر', 'أواسط'],
+        notes: 'هذه بطولة تجريبية',
+      );
+
+      final repo = CompetitionRepository(localDb: getIt());
+      await repo.addCompetition(sampleCompetition);
+      await _loadCompetitions();
+      CustomSnackbar.showSuccess(context, 'تم إضافة بطولة تجريبية');
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('البطولات والمسابقات'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _addSampleCompetition,
+            tooltip: 'إضافة تجريبية',
+          ),
+
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _loadCompetitions(),
+            tooltip: 'تحديث',
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {
@@ -99,7 +154,7 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
                 MaterialPageRoute(builder: (_) => const AddCompetitionScreen()),
               );
               if (result == true) {
-                _loadCompetitions();
+                await _loadCompetitions(); // انتظر حتى يتم التحميل
               }
             },
           ),
@@ -201,6 +256,13 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
       child: InkWell(
         onTap: () {
           // TODO: فتح تفاصيل البطولة
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  CompetitionDetailsScreen(competition: competition),
+            ),
+          );
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(

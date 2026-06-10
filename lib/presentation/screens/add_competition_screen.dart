@@ -33,6 +33,9 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
   List<int> _selectedSpecialtyIds = [];
   List<String> _selectedAgeCategories = [];
 
+  // تخزين الفئات العمرية لكل اختصاص على حدة
+  Map<int, List<String>> _selectedAgeCategoriesBySpecialty = {};
+
   bool _isLoading = true;
 
   @override
@@ -175,13 +178,25 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
 
       Navigator.pop(context, true);
     }
+
+    // جمع كل الفئات العمرية المختارة
+    List<String> allSelectedCategories = [];
+    for (var categories in _selectedAgeCategoriesBySpecialty.values) {
+      allSelectedCategories.addAll(categories);
+    }
   }
 
-  List<AgeCategoryItem> _getAllAgeCategories() {
+  // الحصول على الفئات العمرية للاختصاصات المختارة فقط
+  List<AgeCategoryItem> _getAgeCategoriesForSelectedSpecialties() {
     Set<AgeCategoryItem> allCategories = {};
+
+    // تصفية الاختصاصات المختارة فقط
     for (var specialty in _specialties) {
-      allCategories.addAll(specialty.ageCategories);
+      if (_selectedSpecialtyIds.contains(specialty.id)) {
+        allCategories.addAll(specialty.ageCategories);
+      }
     }
+
     return allCategories.toList();
   }
 
@@ -302,7 +317,8 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
             const SizedBox(height: 16),
 
             // الاختصاصات المعنية
-            const Text(
+
+            /*             const Text(
               'الاختصاصات المعنية',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
@@ -328,31 +344,29 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
               }).toList(),
             ),
 
-            const SizedBox(height: 16),
-
-            // الفئات العمرية المشاركة
+ */
+            // الاختصاصات المعنية
             const Text(
-              'الفئات العمرية المشاركة',
+              'الاختصاصات المعنية',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              children: _getAllAgeCategories().map((category) {
-                final isSelected = _selectedAgeCategories.contains(
-                  category.name,
-                );
+              children: _specialties.map((specialty) {
+                final isSelected = _selectedSpecialtyIds.contains(specialty.id);
                 return FilterChip(
-                  label: Text(
-                    '${category.name} (${category.minAge}-${category.maxAge} سنة)',
-                  ),
+                  label: Text(specialty.name),
                   selected: isSelected,
                   onSelected: (selected) {
                     setState(() {
                       if (selected) {
-                        _selectedAgeCategories.add(category.name);
+                        _selectedSpecialtyIds.add(specialty.id);
+                        // تهيئة قائمة فارغة للفئات العمرية لهذا الاختصاص
+                        _selectedAgeCategoriesBySpecialty[specialty.id] = [];
                       } else {
-                        _selectedAgeCategories.remove(category.name);
+                        _selectedSpecialtyIds.remove(specialty.id);
+                        _selectedAgeCategoriesBySpecialty.remove(specialty.id);
                       }
                     });
                   },
@@ -360,6 +374,100 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
                 );
               }).toList(),
             ),
+
+            // الفئات العمرية لكل اختصاص على حدة
+            if (_selectedSpecialtyIds.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'الفئات العمرية المشاركة',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ..._selectedSpecialtyIds.map((specialtyId) {
+                final specialty = _specialties.firstWhere(
+                  (s) => s.id == specialtyId,
+                );
+                final selectedCategories =
+                    _selectedAgeCategoriesBySpecialty[specialtyId] ?? [];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'اختصاص: ${specialty.name}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      children: specialty.ageCategories.map((category) {
+                        final isSelected = selectedCategories.contains(
+                          category.name,
+                        );
+                        return FilterChip(
+                          label: Text(
+                            '${category.name} (${category.minAge}-${category.maxAge} سنة)',
+                          ),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) {
+                                _selectedAgeCategoriesBySpecialty[specialtyId]!
+                                    .add(category.name);
+                              } else {
+                                _selectedAgeCategoriesBySpecialty[specialtyId]!
+                                    .remove(category.name);
+                              }
+                            });
+                          },
+                          selectedColor: const Color(
+                            0xFFE53935,
+                          ).withOpacity(0.2),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                );
+              }),
+            ],
+            // الفئات العمرية المشاركة (تظهر فقط بعد اختيار اختصاص)
+            if (_selectedSpecialtyIds.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'الفئات العمرية المشاركة',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: _getAgeCategoriesForSelectedSpecialties().map((
+                  category,
+                ) {
+                  final isSelected = _selectedAgeCategories.contains(
+                    category.name,
+                  );
+                  return FilterChip(
+                    label: Text(
+                      '${category.name} (${category.minAge}-${category.maxAge} سنة)',
+                    ),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedAgeCategories.add(category.name);
+                        } else {
+                          _selectedAgeCategories.remove(category.name);
+                        }
+                      });
+                    },
+                    selectedColor: const Color(0xFFE53935).withOpacity(0.2),
+                  );
+                }).toList(),
+              ),
+            ],
 
             const SizedBox(height: 16),
 
