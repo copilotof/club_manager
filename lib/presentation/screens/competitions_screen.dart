@@ -28,26 +28,6 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
     _loadCompetitions();
   }
 
-  /* 
-  Future<void> _loadCompetitions() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final competitions = await _repository.getAllCompetitions();
-      setState(() {
-        _competitions = competitions;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      CustomSnackbar.showError(context, 'خطأ في تحميل البطولات');
-    }
-  }
- */
   Future<void> _loadCompetitions() async {
     setState(() {
       _isLoading = true;
@@ -56,8 +36,12 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
     try {
       final competitions = await _repository.getAllCompetitions();
       print('📊 تم جلب ${competitions.length} بطولة');
+      final now = DateTime.now();
       for (var c in competitions) {
-        print('   - ${c.name} (${c.startDate})');
+        final status = c.endDate.isAfter(now) ? "قادمة" : "سابقة";
+        print(
+          '   - ${c.name} (${c.startDate.day}/${c.startDate.month}/${c.startDate.year} - ${c.endDate.day}/${c.endDate.month}/${c.endDate.year}) : $status',
+        );
       }
       setState(() {
         _competitions = competitions;
@@ -73,15 +57,13 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
   }
 
   List<CompetitionModel> get _upcomingCompetitions {
-    return _competitions
-        .where((c) => c.startDate.isAfter(DateTime.now()))
-        .toList();
+    final now = DateTime.now();
+    return _competitions.where((c) => c.endDate.isAfter(now)).toList();
   }
 
   List<CompetitionModel> get _pastCompetitions {
-    return _competitions
-        .where((c) => c.endDate.isBefore(DateTime.now()))
-        .toList();
+    final now = DateTime.now();
+    return _competitions.where((c) => c.endDate.isBefore(now)).toList();
   }
 
   Future<void> _deleteCompetition(int id, String name) async {
@@ -239,6 +221,10 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
                       final competition = _selectedTab == 0
                           ? _upcomingCompetitions[index]
                           : _pastCompetitions[index];
+                      print(
+                        '📱 عرض البطولة رقم $index: ${competition.name}',
+                      ); // للتصحيح
+
                       return _buildCompetitionCard(competition);
                     },
                   ),
@@ -249,6 +235,8 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
   }
 
   Widget _buildCompetitionCard(CompetitionModel competition) {
+    print('🃏 بناء بطاقة لـ: ${competition.name}'); // للتصحيح
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -290,7 +278,8 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
                     ),
                   ),
                   const Spacer(),
-                  if (competition.startDate.isAfter(DateTime.now()))
+                  //     شرط ظهور "قادمة":
+                  if (competition.endDate.isAfter(DateTime.now()))
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -305,6 +294,7 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
                         style: TextStyle(fontSize: 12, color: Colors.green),
                       ),
                     ),
+
                   PopupMenuButton(
                     itemBuilder: (context) => [
                       const PopupMenuItem(

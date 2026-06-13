@@ -1,4 +1,5 @@
 // lib/presentation/screens/add_competition_screen.dart
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -91,6 +92,32 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
       });
     }
   }
+  /* 
+  void _fillForm() {
+    final c = widget.competition!;
+    _nameController.text = c.name;
+    _type = c.type;
+    _startDate = c.startDate;
+    _endDate = c.endDate;
+    _locationController.text = c.location;
+    _selectedSpecialtyIds = List.from(c.specialtyIds);
+    _notesController.text = c.notes ?? '';
+
+    // ✅ إعادة بناء الفئات العمرية لكل اختصاص
+    _selectedAgeCategoriesBySpecialty.clear();
+
+    // بما أننا نخزن الفئات العمرية كقائمة مسطحة، نفترض أنها تنتمي للاختصاص الأول
+    // (هذا حل مؤقت، يجب تحسينه لاحقاً بتخزينها بشكل منفصل لكل اختصاص)
+    if (_specialties.isNotEmpty && c.ageCategories.isNotEmpty) {
+      for (var specialtyId in _selectedSpecialtyIds) {
+        // نضيف جميع الفئات العمرية لكل اختصاص (مؤقت)
+        _selectedAgeCategoriesBySpecialty[specialtyId] = List.from(
+          c.ageCategories,
+        );
+      }
+    }
+  }
+ */
 
   void _fillForm() {
     final c = widget.competition!;
@@ -100,11 +127,68 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
     _endDate = c.endDate;
     _locationController.text = c.location;
     _selectedSpecialtyIds = List.from(c.specialtyIds);
-    _selectedAgeCategories = List.from(c.ageCategories);
     _notesController.text = c.notes ?? '';
+
+    // ✅ إعادة بناء الفئات العمرية لكل اختصاص
+    _selectedAgeCategoriesBySpecialty.clear();
+
+    // توزيع الفئات العمرية على الاختصاصات
+    // (حالياً نخزنها كقائمة مسطحة، نضيفها لكل اختصاص)
+    for (var specialtyId in _selectedSpecialtyIds) {
+      _selectedAgeCategoriesBySpecialty[specialtyId] = List.from(
+        c.ageCategories,
+      );
+    }
+
+    print('📝 تعديل بطولة: ${c.name}');
+    print('   الاختصاصات: $_selectedSpecialtyIds');
+    print('   الفئات العمرية: ${c.ageCategories}');
   }
 
   Future<void> _selectStartDate() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SizedBox(
+        height: 280,
+        child: CupertinoDatePicker(
+          mode: CupertinoDatePickerMode.date,
+          initialDateTime: _startDate,
+          minimumDate: DateTime(2020),
+          maximumDate: DateTime(2030),
+          onDateTimeChanged: (DateTime newDate) {
+            setState(() {
+              _startDate = newDate;
+              if (_endDate.isBefore(_startDate)) {
+                _endDate = _startDate.add(const Duration(days: 1));
+              }
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _selectEndDate() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SizedBox(
+        height: 280,
+        child: CupertinoDatePicker(
+          mode: CupertinoDatePickerMode.date,
+          initialDateTime: _endDate,
+          minimumDate: _startDate,
+          maximumDate: _startDate.add(const Duration(days: 365)),
+          onDateTimeChanged: (DateTime newDate) {
+            setState(() {
+              _endDate = newDate;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  /*   Future<void> _selectStartDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _startDate,
@@ -136,7 +220,8 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
       });
     }
   }
-
+ */
+  /* 
   Future<void> _saveCompetition() async {
     if (_formKey.currentState!.validate()) {
       if (_selectedSpecialtyIds.isEmpty) {
@@ -183,6 +268,57 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
     List<String> allSelectedCategories = [];
     for (var categories in _selectedAgeCategoriesBySpecialty.values) {
       allSelectedCategories.addAll(categories);
+    }
+  }
+ */
+
+  Future<void> _saveCompetition() async {
+    if (_formKey.currentState!.validate()) {
+      if (_selectedSpecialtyIds.isEmpty) {
+        CustomSnackbar.showError(
+          context,
+          'الرجاء اختيار اختصاص واحد على الأقل',
+        );
+        return;
+      }
+
+      // ✅ جمع الفئات العمرية المختارة من جميع الاختصاصات
+      List<String> allSelectedCategories = [];
+      for (var categories in _selectedAgeCategoriesBySpecialty.values) {
+        allSelectedCategories.addAll(categories);
+      }
+
+      if (allSelectedCategories.isEmpty) {
+        CustomSnackbar.showError(
+          context,
+          'الرجاء اختيار فئة عمرية واحدة على الأقل',
+        );
+        return;
+      }
+
+      final competition = CompetitionModel(
+        id: widget.competition?.id,
+        name: _nameController.text,
+        type: _type,
+        startDate: _startDate,
+        endDate: _endDate,
+        location: _locationController.text,
+        specialtyIds: _selectedSpecialtyIds,
+        ageCategories: allSelectedCategories,
+        notes: _notesController.text.isEmpty ? null : _notesController.text,
+      );
+
+      final repo = CompetitionRepository(localDb: getIt());
+
+      if (widget.competition == null) {
+        await repo.addCompetition(competition);
+        CustomSnackbar.showSuccess(context, 'تم إضافة البطولة بنجاح');
+      } else {
+        await repo.updateCompetition(competition);
+        CustomSnackbar.showSuccess(context, 'تم تحديث البطولة بنجاح');
+      }
+
+      Navigator.pop(context, true);
     }
   }
 
@@ -376,6 +512,8 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
             ),
 
             // الفئات العمرية لكل اختصاص على حدة
+
+            // الفئات العمرية لكل اختصاص على حدة
             if (_selectedSpecialtyIds.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Text(
@@ -387,6 +525,7 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
                 final specialty = _specialties.firstWhere(
                   (s) => s.id == specialtyId,
                 );
+                // ✅ تأكد من وجود قائمة، إذا كانت null استخدم قائمة فارغة
                 final selectedCategories =
                     _selectedAgeCategoriesBySpecialty[specialtyId] ?? [];
                 return Column(
@@ -413,6 +552,12 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
                           selected: isSelected,
                           onSelected: (selected) {
                             setState(() {
+                              // ✅ تأكد من وجود القائمة قبل الإضافة
+                              if (_selectedAgeCategoriesBySpecialty[specialtyId] ==
+                                  null) {
+                                _selectedAgeCategoriesBySpecialty[specialtyId] =
+                                    [];
+                              }
                               if (selected) {
                                 _selectedAgeCategoriesBySpecialty[specialtyId]!
                                     .add(category.name);
@@ -433,42 +578,6 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
                 );
               }),
             ],
-            // الفئات العمرية المشاركة (تظهر فقط بعد اختيار اختصاص)
-            if (_selectedSpecialtyIds.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'الفئات العمرية المشاركة',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: _getAgeCategoriesForSelectedSpecialties().map((
-                  category,
-                ) {
-                  final isSelected = _selectedAgeCategories.contains(
-                    category.name,
-                  );
-                  return FilterChip(
-                    label: Text(
-                      '${category.name} (${category.minAge}-${category.maxAge} سنة)',
-                    ),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedAgeCategories.add(category.name);
-                        } else {
-                          _selectedAgeCategories.remove(category.name);
-                        }
-                      });
-                    },
-                    selectedColor: const Color(0xFFE53935).withOpacity(0.2),
-                  );
-                }).toList(),
-              ),
-            ],
-
             const SizedBox(height: 16),
 
             // ملاحظات

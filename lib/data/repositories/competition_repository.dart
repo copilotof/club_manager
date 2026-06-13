@@ -2,6 +2,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../models/competition_model.dart';
 import '../datasources/local/app_database.dart';
+import '../models/participation_model.dart';
 
 class CompetitionRepository {
   final AppDatabase _localDb;
@@ -68,6 +69,44 @@ class CompetitionRepository {
   Future<int> deleteCompetition(int id) async {
     final db = await _db;
     return await db.delete('competitions', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // إضافة مشاركة جديدة
+  Future<int> addParticipation(ParticipationModel participation) async {
+    final db = await _db;
+    return await db.insert('participations', participation.toMap());
+  }
+
+  // جلب مشاركات بطولة معينة
+  Future<List<ParticipationModel>> getParticipationsByCompetition(
+    int competitionId,
+  ) async {
+    final db = await _db;
+    final result = await db.query(
+      'participations',
+      where: 'competition_id = ?',
+      whereArgs: [competitionId],
+    );
+    print('📊 جلب ${result.length} مشاركة للبطولة $competitionId');
+
+    return result.map((map) => ParticipationModel.fromMap(map)).toList();
+  }
+
+  // تحديث مشاركة
+  Future<int> updateParticipation(ParticipationModel participation) async {
+    final db = await _db;
+    return await db.update(
+      'participations',
+      participation.toMap(),
+      where: 'id = ?',
+      whereArgs: [participation.id],
+    );
+  }
+
+  // حذف مشاركة
+  Future<int> deleteParticipation(int id) async {
+    final db = await _db;
+    return await db.delete('participations', where: 'id = ?', whereArgs: [id]);
   }
 
   // جلب بطولة حسب المعرف

@@ -29,6 +29,21 @@ class ParticipationModel {
   });
 
   String get resultName {
+    if (rank == 1) return '🥇 الرتبة 1 (ذهبية)';
+    if (rank == 2) return '🥈 الرتبة 2 (فضية)';
+    if (rank == 3) return '🥉 الرتبة 3 (برونزية)';
+    return '📋 مشاركة (الرتبة ${rank ?? "-"})';
+  }
+
+  Color get resultColor {
+    if (rank == 1) return Colors.amber;
+    if (rank == 2) return Colors.grey;
+    if (rank == 3) return Colors.brown;
+    return Colors.blue;
+  }
+
+  /* 
+  String get resultName {
     switch (result) {
       case 'gold':
         return '🥇 ذهبية';
@@ -58,6 +73,7 @@ class ParticipationModel {
     }
   }
 
+ */
   Map<String, dynamic> toMap() {
     return {
       'id': id,
