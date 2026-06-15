@@ -42,7 +42,7 @@ final GoRouter router = GoRouter(
       },
     ),
 
-    GoRoute(
+    /*     GoRoute(
       path: '/attendance/:groupId/:date',
       name: 'attendance',
       builder: (context, state) {
@@ -50,6 +50,11 @@ final GoRouter router = GoRouter(
         final date = DateTime.parse(state.pathParameters['date']!);
         return AttendanceScreen(groupId: groupId, date: date);
       },
+    ), */
+    GoRoute(
+      path: '/attendance',
+      name: 'attendance',
+      builder: (context, state) => const AttendanceScreen(),
     ),
 
     GoRoute(

@@ -1,6 +1,7 @@
 // lib/presentation/screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'attendance_screen.dart';
 import 'competitions_screen.dart'; // ✅ أضف هذا الاستيراد
 import 'financial_dashboard_screen.dart';
 import 'settings_screen.dart';
@@ -57,7 +58,7 @@ class DashboardScreen extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // زر تسجيل الحضور
+              /*               // زر تسجيل الحضور
               _buildDashboardButton(
                 context,
                 icon: Icons.checklist,
@@ -69,6 +70,15 @@ class DashboardScreen extends StatelessWidget {
                     '/attendance/1/${today.toIso8601String().split('T').first}',
                   );
                 },
+              ), */
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AttendanceScreen()),
+                  );
+                },
+                child: const Text('تسجيل الحضور'),
               ),
 
               const SizedBox(height: 12),

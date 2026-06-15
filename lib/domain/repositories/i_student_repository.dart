@@ -9,4 +9,5 @@ abstract class IStudentRepository {
   Future<void> updateStudent(StudentModel student);
   Future<void> deleteStudent(int id);
   Future<List<StudentModel>> searchStudents(String query);
+  Future<List<StudentModel>> getStudentsByGroup(int groupId);
 }

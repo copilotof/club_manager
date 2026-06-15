@@ -48,6 +48,18 @@ class StudentRepository implements IStudentRepository {
     }
   }
 
+  // جلب طلاب فوج معين
+  Future<List<StudentModel>> getStudentsByGroup(int groupId) async {
+    final db = await _db;
+    final result = await db.query(
+      'students',
+      where: 'group_id = ? AND is_active = 1',
+      whereArgs: [groupId],
+      orderBy: 'first_name',
+    );
+    return result.map((map) => StudentModel.fromMap(map)).toList();
+  }
+
   @override
   Future<void> addStudent(StudentModel student) async {
     final db = await _db;

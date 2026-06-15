@@ -365,7 +365,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                             children: [
                               Icon(Icons.edit, size: 20),
                               SizedBox(width: 8),
-                              Text('Tعديل'),
+                              Text('تعديل'),
                             ],
                           ),
                         ),
@@ -405,6 +405,38 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                     ),
                   ],
                 ),
+
+                // ✅ عرض القاعة والفوج
+                if (student.hallId != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.business,
+                          size: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'قاعة ${student.hallId}', // مؤقت، سيتم جلب الاسم لاحقاً
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

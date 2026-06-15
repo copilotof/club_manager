@@ -14,6 +14,11 @@ import '../bloc/student/states/student_state.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
 
+import '../../data/models/hall_model.dart';
+import '../../data/models/group_model.dart';
+import '../../data/repositories/hall_repository.dart';
+import '../../data/repositories/group_repository.dart';
+
 class AddEditStudentScreen extends StatefulWidget {
   final StudentModel? student;
   const AddEditStudentScreen({super.key, this.student});
@@ -51,19 +56,20 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   final _doctorNameController = TextEditingController();
   final _emergencyPhoneController = TextEditingController();
 
-  DateTime? _selectedDate;
-
-  // المتغيرات
-  int? _selectedHallId;
-  int? _selectedGroupId;
+  // ==================== للقاعات والأفواج ====================
   List<HallModel> _halls = [];
   List<GroupModel> _groups = [];
+  int? _selectedHallId;
+  int? _selectedGroupId;
+
+  DateTime? _selectedDate;
 
   @override
   void initState() {
     super.initState();
     _studentBloc = StudentBloc(getIt());
     _tabController = TabController(length: 3, vsync: this);
+    _loadHalls(); // ✅ تحميل القاعات
 
     if (widget.student != null) {
       _fillFormWithStudentData();
@@ -78,6 +84,14 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     _birthDateController.text = _formatDate(s.birthDate);
     _gender = s.gender;
     _parentPhoneController.text = s.parentPhone ?? '';
+
+    _selectedHallId = s.hallId;
+    _selectedGroupId = s.groupId;
+
+    // إذا كانت هناك قاعة محددة، قم بتحميل الأفواج الخاصة بها
+    if (_selectedHallId != null) {
+      _loadGroups(_selectedHallId!);
+    }
 
     _semester1Controller.text = s.semester1Grade?.toString() ?? '';
     _semester2Controller.text = s.semester2Grade?.toString() ?? '';
@@ -124,16 +138,26 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
 
   // تحميل القاعات في initState
   Future<void> _loadHalls() async {
-    final repo = HallRepository(localDb: getIt());
-    _halls = await repo.getAllHalls();
-    setState(() {});
+    try {
+      final repo = HallRepository(localDb: getIt());
+      _halls = await repo.getAllHalls();
+      setState(() {});
+    } catch (e) {
+      print('خطأ في تحميل القاعات: $e');
+    }
   }
 
-  // تحميل الأفواج عند اختيار قاعة
+  // تحميل الأفواج حسب القاعة المختارة
   Future<void> _loadGroups(int hallId) async {
-    final repo = GroupRepository(localDb: getIt());
-    _groups = await repo.getGroupsByHall(hallId);
-    setState(() {});
+    try {
+      final repo = GroupRepository(localDb: getIt());
+      _groups = await repo.getGroupsByHall(hallId);
+      setState(() {});
+    } catch (e) {
+      print('خطأ في تحميل الأفواج: $e');
+      _groups = [];
+      setState(() {});
+    }
   }
 
   // ✅ دالة الحفظ المحسنة (تمنع الضغط المتكرر)
@@ -170,8 +194,8 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
           ? null
           : _parentPhoneController.text,
       enrollmentDate: widget.student?.enrollmentDate ?? DateTime.now(),
-      hallId: 1,
-      groupId: 1,
+      hallId: _selectedHallId, // ✅ حفظ القاعة
+      groupId: _selectedGroupId, // ✅ حفظ الفوج
       semester1Grade: _semester1Controller.text.isEmpty
           ? null
           : double.tryParse(_semester1Controller.text),
@@ -360,16 +384,24 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+              prefixIcon: const Icon(Icons.business),
             ),
             value: _selectedHallId,
             hint: const Text('-- اختر قاعة --'),
-            items: _halls.map((hall) {
-              return DropdownMenuItem(value: hall.id, child: Text(hall.name));
-            }).toList(),
+            items: [
+              const DropdownMenuItem(
+                value: null,
+                child: Text('-- بدون قاعة --'),
+              ),
+              ..._halls.map((hall) {
+                return DropdownMenuItem(value: hall.id, child: Text(hall.name));
+              }),
+            ],
             onChanged: (value) async {
               setState(() {
                 _selectedHallId = value;
                 _selectedGroupId = null;
+                _groups = [];
               });
               if (value != null) {
                 await _loadGroups(value);
@@ -387,12 +419,22 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+              prefixIcon: const Icon(Icons.group),
             ),
             value: _selectedGroupId,
             hint: const Text('-- اختر فوج --'),
-            items: _groups.map((group) {
-              return DropdownMenuItem(value: group.id, child: Text(group.name));
-            }).toList(),
+            items: [
+              const DropdownMenuItem(
+                value: null,
+                child: Text('-- بدون فوج --'),
+              ),
+              ..._groups.map((group) {
+                return DropdownMenuItem(
+                  value: group.id,
+                  child: Text(group.name),
+                );
+              }),
+            ],
             onChanged: (value) {
               setState(() {
                 _selectedGroupId = value;
