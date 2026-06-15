@@ -39,6 +39,7 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
       final now = DateTime.now();
       for (var c in competitions) {
         final status = c.endDate.isAfter(now) ? "قادمة" : "سابقة";
+
         print(
           '   - ${c.name} (${c.startDate.day}/${c.startDate.month}/${c.startDate.year} - ${c.endDate.day}/${c.endDate.month}/${c.endDate.year}) : $status',
         );
@@ -95,7 +96,7 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Future<void> _addSampleCompetition() async {
+    /*     Future<void> _addSampleCompetition() async {
       final sampleCompetition = CompetitionModel(
         name: 'بطولة تجريبية للاختبار',
         type: 'national',
@@ -108,21 +109,21 @@ class _CompetitionsScreenState extends State<CompetitionsScreen> {
       );
 
       final repo = CompetitionRepository(localDb: getIt());
-      await repo.addCompetition(sampleCompetition);
+     // await repo.addCompetition(sampleCompetition);
       await _loadCompetitions();
       CustomSnackbar.showSuccess(context, 'تم إضافة بطولة تجريبية');
     }
 
+  */
     return Scaffold(
       appBar: AppBar(
         title: const Text('البطولات والمسابقات'),
         actions: [
-          IconButton(
+          /*           IconButton(
             icon: const Icon(Icons.add),
             onPressed: _addSampleCompetition,
             tooltip: 'إضافة تجريبية',
-          ),
-
+          ), */
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadCompetitions(),

@@ -19,7 +19,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _createTables,
       onUpgrade: _onUpgrade, // ✅ إضافة دالة الترقية
     );
@@ -81,33 +81,6 @@ class AppDatabase {
         synced INTEGER DEFAULT 0
       )
     ''');
-    /*
-    // ✅ جدول الدفعات (بجميع الأعمدة)
-    await db.execute('''
-    CREATE TABLE payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
-      payment_date TEXT NOT NULL,
-      payment_type TEXT NOT NULL,
-      month INTEGER,
-      year INTEGER,
-      is_extra INTEGER DEFAULT 0,
-      extra_reason TEXT,
-      is_gifted INTEGER DEFAULT 0,
-      notes TEXT,
-      is_partial INTEGER DEFAULT 0,
-      parent_payment_id INTEGER,
-      discount_months INTEGER,
-      discount_percentage REAL,
-      is_fully_paid INTEGER DEFAULT 0,
-      target_month INTEGER,
-      target_year INTEGER,
-      remaining_amount REAL,
-      FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
-    )
-  ''');
- */
 
     await db.execute('''
   CREATE TABLE payments (
@@ -175,6 +148,53 @@ class AppDatabase {
     created_at TEXT NOT NULL,
     FOREIGN KEY (competition_id) REFERENCES competitions (id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+  )
+''');
+
+    await db.execute('''
+  CREATE TABLE belts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    belt_color TEXT NOT NULL,
+    date_achieved TEXT NOT NULL,
+    coach_name TEXT,
+    notes TEXT,
+    order_index INTEGER NOT NULL,
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+  )
+''');
+
+    // جدول القاعات
+    await db.execute('''
+  CREATE TABLE halls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT,
+    phone TEXT
+  )
+''');
+
+    // جدول الأفواج
+    await db.execute('''
+  CREATE TABLE groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hall_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    student_count INTEGER DEFAULT 0,
+    FOREIGN KEY (hall_id) REFERENCES halls (id) ON DELETE CASCADE
+  )
+''');
+
+    // جدول الحصص
+    await db.execute('''
+  CREATE TABLE sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    FOREIGN KEY (group_id) REFERENCES groups (id) ON DELETE CASCADE
   )
 ''');
   }
@@ -248,6 +268,64 @@ class AppDatabase {
         );
       } catch (e) {
         print('⚠️ الأعمدة موجودة مسبقاً');
+      }
+    }
+
+    if (oldVersion < 4) {
+      try {
+        await db.execute('''
+      CREATE TABLE IF NOT EXISTS belts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        belt_color TEXT NOT NULL,
+        date_achieved TEXT NOT NULL,
+        coach_name TEXT,
+        notes TEXT,
+        order_index INTEGER NOT NULL,
+        FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+      )
+    ''');
+      } catch (e) {
+        print('⚠️ جدول belts موجود مسبقاً');
+      }
+    }
+
+    if (oldVersion < 5) {
+      try {
+        await db.execute('''
+      CREATE TABLE IF NOT EXISTS halls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        address TEXT,
+        phone TEXT
+      )
+    ''');
+
+        await db.execute('''
+      CREATE TABLE IF NOT EXISTS groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hall_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        student_count INTEGER DEFAULT 0,
+        FOREIGN KEY (hall_id) REFERENCES halls (id) ON DELETE CASCADE
+      )
+    ''');
+
+        await db.execute('''
+      CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        day_of_week INTEGER NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        FOREIGN KEY (group_id) REFERENCES groups (id) ON DELETE CASCADE
+      )
+    ''');
+
+        print('✅ تم إنشاء جداول القاعات والأفواج والحصص');
+      } catch (e) {
+        print('⚠️ خطأ في إنشاء الجداول: $e');
       }
     }
   }

@@ -98,6 +98,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 _loadData();
               }
             },
+
             tooltip: 'إضافة مشارك',
           ),
         ],
@@ -138,6 +139,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
+                            /*                             
                             onPressed: () {
                               Navigator.push(
                                 context,
@@ -149,6 +151,22 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                 ),
                               );
                             },
+           */
+                            onPressed: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AddParticipationScreen(
+                                    competitionId: widget.competition.id!,
+                                    competition: widget.competition,
+                                  ),
+                                ),
+                              );
+                              if (result == true) {
+                                _loadData();
+                              }
+                            },
+
                             icon: const Icon(Icons.add),
                             label: const Text('إضافة مشارك'),
                           ),

@@ -3,7 +3,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/widgets/custom_snackbar.dart';
+import '../../data/models/group_model.dart';
+import '../../data/models/hall_model.dart';
 import '../../data/models/student_model.dart';
+import '../../data/repositories/group_repository.dart';
+import '../../data/repositories/hall_repository.dart';
 import '../bloc/student/student_bloc.dart';
 import '../bloc/student/events/student_event.dart';
 import '../bloc/student/states/student_state.dart';
@@ -48,6 +52,12 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   final _emergencyPhoneController = TextEditingController();
 
   DateTime? _selectedDate;
+
+  // المتغيرات
+  int? _selectedHallId;
+  int? _selectedGroupId;
+  List<HallModel> _halls = [];
+  List<GroupModel> _groups = [];
 
   @override
   void initState() {
@@ -110,6 +120,20 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
         );
       },
     );
+  }
+
+  // تحميل القاعات في initState
+  Future<void> _loadHalls() async {
+    final repo = HallRepository(localDb: getIt());
+    _halls = await repo.getAllHalls();
+    setState(() {});
+  }
+
+  // تحميل الأفواج عند اختيار قاعة
+  Future<void> _loadGroups(int hallId) async {
+    final repo = GroupRepository(localDb: getIt());
+    _groups = await repo.getGroupsByHall(hallId);
+    setState(() {});
   }
 
   // ✅ دالة الحفظ المحسنة (تمنع الضغط المتكرر)
@@ -325,6 +349,55 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
             _parentPhoneController,
             Icons.phone,
             keyboardType: TextInputType.phone,
+          ),
+
+          // اختيار القاعة
+          const SizedBox(height: 16),
+          const Text('القاعة', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            value: _selectedHallId,
+            hint: const Text('-- اختر قاعة --'),
+            items: _halls.map((hall) {
+              return DropdownMenuItem(value: hall.id, child: Text(hall.name));
+            }).toList(),
+            onChanged: (value) async {
+              setState(() {
+                _selectedHallId = value;
+                _selectedGroupId = null;
+              });
+              if (value != null) {
+                await _loadGroups(value);
+              }
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          // اختيار الفوج
+          const Text('الفوج', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            value: _selectedGroupId,
+            hint: const Text('-- اختر فوج --'),
+            items: _groups.map((group) {
+              return DropdownMenuItem(value: group.id, child: Text(group.name));
+            }).toList(),
+            onChanged: (value) {
+              setState(() {
+                _selectedGroupId = value;
+              });
+            },
           ),
         ],
       ),

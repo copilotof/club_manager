@@ -6,14 +6,17 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/widgets/custom_snackbar.dart';
 import '../../data/datasources/local/app_database.dart';
+import '../../data/models/belt_model.dart';
 import '../../data/models/payment_model.dart';
 import '../../data/models/student_model.dart';
+import '../../data/repositories/belt_repository.dart';
 import '../../data/repositories/payment_repository.dart';
 import '../bloc/student/student_bloc.dart';
 import '../bloc/student/events/student_event.dart';
 import '../bloc/student/states/student_state.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
+import 'add_belt_screen.dart';
 import 'add_edit_student_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'student_payments_screen.dart';
@@ -45,16 +48,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   double _monthlyFee = 2000;
   double _insuranceFee = 1000;
 
+  List<BeltModel> _studentBelts = [];
+
   @override
   void initState() {
     super.initState();
     _studentBloc = StudentBloc(getIt());
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _studentBloc.add(LoadStudentsEvent());
     _loadFees(); // ✅ تحميل القيم من الإعدادات
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkDatabaseStructure();
     });
+    _loadStudentBelts();
   }
 
   void _refreshPayments() {
@@ -207,6 +213,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               Tab(text: 'المدفوعات', icon: Icon(Icons.payments)),
               Tab(text: 'معلومات دراسية', icon: Icon(Icons.school)),
               Tab(text: 'معلومات صحية', icon: Icon(Icons.health_and_safety)),
+              Tab(
+                text: '🥋 الأحزمة',
+                icon: Icon(Icons.sports_martial_arts),
+              ), // ✅ جديد
               Tab(text: 'السجل الرياضي', icon: Icon(Icons.emoji_events)),
               Tab(text: 'إحصائيات', icon: Icon(Icons.bar_chart)),
             ],
@@ -257,7 +267,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   _buildPaymentsTab(isMobile),
                   _buildAcademicInfoTab(isMobile),
                   _buildHealthInfoTab(isMobile),
-                  _buildSportsRecordTab(isMobile),
+                  _buildBeltsTab(isMobile), // ✅ الأحزمة
+                  _buildSportsRecordTab(isMobile), // البطولات
                   _buildStatisticsTab(isMobile),
                 ],
               );
@@ -569,180 +580,137 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
-  /*
-  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
-    final payments = await _getStudentPayments();
+  Widget _buildBeltsTab(bool isMobile) {
+    return Column(
+      children: [
+        // زر إضافة حزام جديد
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddBeltScreen(
+                    studentId: widget.studentId,
+                    onBeltAdded: () {
+                      _loadStudentBelts();
+                    },
+                  ),
+                ),
+              );
+              if (result == true) {
+                _loadStudentBelts();
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('تسجيل ترقية جديدة'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935),
+            ),
+          ),
+        ),
 
-    var filtered = payments;
-
-    // تصفية حسب السنة
-    if (_selectedYear != 0) {
-      filtered = filtered
-          .where((p) => p.paymentDate.year == _selectedYear)
-          .toList();
-    }
-
-    // ✅ تصفية المبالغ غير المكتملة (نسخة مبسطة لا تحتاج متغيرات خارجية)
-    if (_showOnlyUnpaid) {
-      filtered = filtered.where((p) {
-        // المستحقات الإضافية لا تظهر في التصفية
-        if (p.paymentType == 'extra') return false;
-
-        // الدفعة غير مكتملة إذا:
-        // 1. هي دفعة جزئية
-        // 2. أو لديها مبلغ متبقي
-        // 3. أو لم يتم دفعها بالكامل
-        return p.isPartial == true ||
-            (p.remainingAmount != null && p.remainingAmount! > 0) ||
-            p.isFullyPaid == false;
-      }).toList();
-    }
-
-    return filtered;
-  }
-*/
-  /*
-  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
-    final payments = await _getStudentPayments();
-
-    var filtered = payments;
-
-    // تصفية حسب السنة
-    if (_selectedYear != 0) {
-      filtered = filtered
-          .where((p) => p.paymentDate.year == _selectedYear)
-          .toList();
-    }
-
-    // ✅ تصفية المبالغ غير المكتملة (بدون المستحقات الإضافية)
- 
-    if (_showOnlyUnpaid) {
-      // أولاً: نجمع كل الدفعات المرتبطة بنفس الهدف (نفس الشهر أو نفس السنة)
-      Map<String, List<PaymentModel>> groupedPayments = {};
-
-      for (var p in filtered) {
-        // تجاهل المستحقات الإضافية تماماً
-        if (p.paymentType == 'extra') continue;
-
-        String key;
-        if (p.paymentType == 'monthly') {
-          key = 'monthly_${p.targetYear}_${p.targetMonth}';
-        } else {
-          key = 'insurance_${p.targetYear}';
-        }
-
-        groupedPayments.putIfAbsent(key, () => []);
-        groupedPayments[key]!.add(p);
-      }
-
-      // تحديد الدفعات غير المكتملة
-      Set<String> incompleteKeys = {};
-
-      for (var entry in groupedPayments.entries) {
-        final key = entry.key;
-        final paymentsGroup = entry.value;
-        final totalAmount = paymentsGroup.fold<double>(
-          0,
-          (sum, p) => sum + p.amount,
-        );
-
-        double requiredAmount;
-        if (key.startsWith('monthly')) {
-          requiredAmount = 2000; // القيمة الافتراضية، يمكن جلبها من الإعدادات
-        } else {
-          requiredAmount = 1000; // القيمة الافتراضية، يمكن جلبها من الإعدادات
-        }
-
-        // إذا كان المبلغ الإجمالي أقل من المطلوب، فهي غير مكتملة
-        if (totalAmount < requiredAmount) {
-          incompleteKeys.add(key);
-        }
-      }
-
-      // تصفية الدفعات التي تظهر فقط تلك غير المكتملة
-      filtered = filtered.where((p) {
-        if (p.paymentType == 'extra') return false;
-
-        String key;
-        if (p.paymentType == 'monthly') {
-          key = 'monthly_${p.targetYear}_${p.targetMonth}';
-        } else {
-          key = 'insurance_${p.targetYear}';
-        }
-
-        return incompleteKeys.contains(key);
-      }).toList();
-    }
-
-
-    return filtered;
+        // قائمة الأحزمة
+        Expanded(
+          child: _studentBelts.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.sports_martial_arts,
+                        size: 60,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'لا توجد ترقيات مسجلة',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _studentBelts.length,
+                  itemBuilder: (context, index) {
+                    final belt = _studentBelts[index];
+                    return _buildBeltCard(belt);
+                  },
+                ),
+        ),
+      ],
+    );
   }
 
-  Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
-    final payments = await _getStudentPayments();
-
-    var filtered = payments;
-
-    // تصفية حسب السنة
-    if (_selectedYear != 0) {
-      filtered = filtered
-          .where((p) => p.paymentDate.year == _selectedYear)
-          .toList();
-    }
-
-    // ✅ فلتر المستحقات الإضافية
-    if (_showOnlyExtra) {
-      filtered = filtered.where((p) => p.paymentType == 'extra').toList();
-      return filtered;
-    }
-
-    // ✅ فلتر المبالغ غير المكتملة (بدون المستحقات الإضافية)
-    if (_showOnlyUnpaid) {
-      filtered = filtered.where((p) {
-        // استبعاد المستحقات الإضافية
-        if (p.paymentType == 'extra') return false;
-
-        // تجميع الدفعات حسب الهدف
-        Map<String, double> totals = {};
-        Map<String, String> types = {};
-
-        for (var p in filtered) {
-          String key;
-          if (p.paymentType == 'monthly') {
-            key = 'monthly_${p.targetYear}_${p.targetMonth}';
-            types[key] = 'monthly';
-          } else {
-            key = 'insurance_${p.targetYear}';
-            types[key] = 'insurance';
-          }
-          totals[key] = (totals[key] ?? 0) + p.amount;
-        }
-
-        // حساب المبالغ غير المكتملة
-        Set<String> incompleteKeys = {};
-        for (var entry in totals.entries) {
-          final total = entry.value;
-          final required = types[entry.key] == 'monthly'
-              ? _monthlyFee
-              : _insuranceFee;
-          if (total < required) {
-            incompleteKeys.add(entry.key);
-          }
-        }
-
-        String key;
-        if (p.paymentType == 'monthly') {
-          key = 'monthly_${p.targetYear}_${p.targetMonth}';
-        } else {
-          key = 'insurance_${p.targetYear}';
-        }
-        return incompleteKeys.contains(key);
-      }).toList();
-    }
-
-    return filtered;
+  Widget _buildBeltCard(BeltModel belt) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: belt.getColor(),
+            shape: BoxShape.circle,
+            border: belt.beltColor == 'أبيض'
+                ? Border.all(color: Colors.grey.shade300)
+                : null,
+          ),
+          child: Center(
+            child: Icon(Icons.circle, color: belt.getColor(), size: 30),
+          ),
+        ),
+        title: Text(
+          belt.beltColor,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: belt.getTextColor(),
+          ),
+        ),
+        subtitle: Text(
+          'تاريخ الترقية: ${belt.dateAchieved.year}/${belt.dateAchieved.month}/${belt.dateAchieved.day}',
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, color: Colors.red),
+          onPressed: () => _deleteBelt(belt),
+        ),
+      ),
+    );
   }
-*/
+
+  void _deleteBelt(BeltModel belt) async {
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: Text('هل أنت متأكد من حذف ترقية الحزام "${belt.beltColor}"؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final repo = BeltRepository(localDb: getIt());
+      await repo.deleteBelt(belt.id!);
+      await _loadStudentBelts();
+      if (!mounted) return;
+      CustomSnackbar.showSuccess(context, 'تم حذف الترقية');
+    }
+  }
 
   Future<List<PaymentModel>> _getStudentPaymentsFiltered() async {
     final payments = await _getStudentPayments();
@@ -1798,5 +1766,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       return payment.extraReason ?? 'مستحقات إضافية';
     }
     return 'دفعة غير معروفة';
+  }
+
+  Future<void> _loadStudentBelts() async {
+    final repo = BeltRepository(localDb: getIt());
+    _studentBelts = await repo.getStudentBelts(widget.studentId);
+    setState(() {});
   }
 }
