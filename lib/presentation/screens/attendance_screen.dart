@@ -416,33 +416,70 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   // ==================== مسح QR Code ====================
   Future<void> _scanQRCode() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const QRScannerScreen()),
-    );
+    try {
+      // ✅ فتح QR Scanner في وضع المسح المتسلسل
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const QRScannerScreen(
+            title: 'مسح حضور الطلاب',
+            continuousMode: true,
+          ),
+        ),
+      );
 
-    if (result != null && mounted) {
-      final studentId = int.tryParse(result);
-      if (studentId != null) {
-        final index = _records.indexWhere((r) => r.studentId == studentId);
-        if (index != -1) {
-          _toggleAttendance(index);
+      if (result != null && mounted) {
+        // ✅ إذا كانت النتيجة قائمة (وضع المسح المتسلسل)
+        if (result is List<String>) {
+          int count = 0;
+          for (var code in result) {
+            final studentId = int.tryParse(code);
+            if (studentId != null) {
+              final index = _records.indexWhere(
+                (r) => r.studentId == studentId,
+              );
+              if (index != -1) {
+                _toggleAttendance(index);
+                count++;
+              }
+            }
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✓ تم تسجيل حضور ${_records[index].studentName}'),
+              content: Text('✅ تم تسجيل حضور $count طالب'),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 1),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ الطالب غير موجود في هذا الفوج'),
-              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
+        // ✅ إذا كانت النتيجة نص (وضع المسح العادي)
+        else if (result is String) {
+          final studentId = int.tryParse(result);
+          if (studentId != null) {
+            final index = _records.indexWhere((r) => r.studentId == studentId);
+            if (index != -1) {
+              _toggleAttendance(index);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '✓ تم تسجيل حضور ${_records[index].studentName}',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+            }
+          }
+        }
       }
+    } catch (e) {
+      print('❌ خطأ في مسح QR Code: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ حدث خطأ في مسح الكود'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

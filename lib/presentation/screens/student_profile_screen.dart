@@ -25,7 +25,13 @@ import 'add_payment_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   final int studentId;
-  const StudentProfileScreen({super.key, required this.studentId});
+  final int? initialTab;
+
+  const StudentProfileScreen({
+    super.key,
+    required this.studentId,
+    this.initialTab,
+  });
 
   @override
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
@@ -54,7 +60,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   void initState() {
     super.initState();
     _studentBloc = StudentBloc(getIt());
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(
+      length: 7,
+      vsync: this,
+      initialIndex: widget.initialTab ?? 0,
+    );
     _studentBloc.add(LoadStudentsEvent());
     _loadFees(); // ✅ تحميل القيم من الإعدادات
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -199,6 +209,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               tooltip: 'عرض QR Code',
             ),
             IconButton(
+              icon: const Icon(Icons.print),
+              onPressed: _printQRCode,
+              tooltip: 'طباعة QR Code',
+            ),
+            IconButton(
               icon: const Icon(Icons.edit),
               onPressed: _editStudent,
               tooltip: 'تعديل',
@@ -279,8 +294,77 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
-  // باقي الدوال (_buildPersonalInfoTab, _buildAcademicInfoTab, إلخ)
-  // تبقى كما هي دون تغيير
+  // دالة طباعة QR Code
+  void _printQRCode() {
+    // يمكن استخدام حزمة printing لطباعة QR Code
+    // أو عرض QR Code بحجم أكبر مع إمكانية حفظه
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'بطاقة الطالب',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              QrImageView(
+                data: _student!.id.toString(),
+                version: QrVersions.auto,
+                size: 250,
+                backgroundColor: Colors.white,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _student!.fullName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'الرقم التعريفي: ${_student!.id}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('إغلاق'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // حفظ الصورة أو طباعتها
+                      },
+                      icon: const Icon(Icons.download),
+                      label: const Text('حفظ'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE53935),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildPersonalInfoTab(bool isMobile) {
     return SingleChildScrollView(

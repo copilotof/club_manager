@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'attendance_screen.dart';
 import 'competitions_screen.dart'; // ✅ أضف هذا الاستيراد
 import 'financial_dashboard_screen.dart';
+import 'print_qr_codes_screen.dart';
 import 'settings_screen.dart';
 import 'payments_screen.dart';
 
@@ -32,6 +33,17 @@ class DashboardScreen extends StatelessWidget {
               context.push('/qr_scanner');
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.print),
+
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PrintQRCodesScreen()),
+              );
+            },
+            tooltip: 'الإعدادات',
+          ),
         ],
       ),
       body: Center(
@@ -58,27 +70,18 @@ class DashboardScreen extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              /*               // زر تسجيل الحضور
+              // زر تسجيل الحضور
               _buildDashboardButton(
                 context,
                 icon: Icons.checklist,
                 label: 'تسجيل الحضور',
                 color: Colors.green,
                 onPressed: () {
-                  final today = DateTime.now();
-                  context.push(
-                    '/attendance/1/${today.toIso8601String().split('T').first}',
-                  );
-                },
-              ), */
-              ElevatedButton(
-                onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const AttendanceScreen()),
                   );
                 },
-                child: const Text('تسجيل الحضور'),
               ),
 
               const SizedBox(height: 12),

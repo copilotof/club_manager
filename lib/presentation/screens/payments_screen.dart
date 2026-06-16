@@ -8,6 +8,8 @@ import '../bloc/payment/states/payment_state.dart';
 import '../../core/widgets/custom_snackbar.dart';
 import '../../injection/dependency_injection.dart';
 import 'add_payment_screen.dart';
+import 'qr_scanner_screen.dart';
+import 'student_profile_screen.dart';
 
 class PaymentsScreen extends StatefulWidget {
   final int? studentId;
@@ -190,6 +192,35 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         title: Text(
           widget.studentId != null ? 'دفعات الطالب' : 'الدفعات المالية',
         ),
+
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+              );
+              if (result != null && mounted) {
+                final studentId = int.tryParse(result);
+                if (studentId != null) {
+                  // الانتقال إلى ملف الطالب في تبويب المدفوعات
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentProfileScreen(
+                        studentId: studentId,
+                        initialTab: 1, // تبويب المدفوعات
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+            tooltip: 'مسح QR للدفعات',
+          ),
+          // ... باقي الأزرار
+        ],
       ),
       body: BlocConsumer<PaymentBloc, PaymentState>(
         bloc: _paymentBloc,

@@ -57,10 +57,13 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   final _emergencyPhoneController = TextEditingController();
 
   // ==================== للقاعات والأفواج ====================
+  // المتغيرات
   List<HallModel> _halls = [];
   List<GroupModel> _groups = [];
   int? _selectedHallId;
   int? _selectedGroupId;
+  bool _isLoadingHalls = true;
+  bool _isLoadingGroups = false;
 
   DateTime? _selectedDate;
 
@@ -69,14 +72,17 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     super.initState();
     _studentBloc = StudentBloc(getIt());
     _tabController = TabController(length: 3, vsync: this);
-    _loadHalls(); // ✅ تحميل القاعات
 
+    // تحميل القاعات (والأفواج تلقائياً)
+    _loadHalls();
+
+    // إذا كان تعديل، املأ البيانات بعد تحميل القاعات
     if (widget.student != null) {
       _fillFormWithStudentData();
     }
   }
 
-  void _fillFormWithStudentData() {
+  void _fillFormWithStudentData() async {
     final s = widget.student!;
     _firstNameController.text = s.firstName;
     _lastNameController.text = s.lastName;
@@ -85,14 +91,23 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     _gender = s.gender;
     _parentPhoneController.text = s.parentPhone ?? '';
 
-    _selectedHallId = s.hallId;
-    _selectedGroupId = s.groupId;
+    // ✅ تعيين القاعة إذا كانت موجودة
+    if (s.hallId != null) {
+      setState(() {
+        _selectedHallId = s.hallId;
+      });
+      // تحميل الأفواج لهذه القاعة أولاً
+      await _loadGroups(s.hallId!);
 
-    // إذا كانت هناك قاعة محددة، قم بتحميل الأفواج الخاصة بها
-    if (_selectedHallId != null) {
-      _loadGroups(_selectedHallId!);
+      // ✅ بعد تحميل الأفواج، قم بتعيين الفوج
+      if (s.groupId != null && _groups.any((g) => g.id == s.groupId)) {
+        setState(() {
+          _selectedGroupId = s.groupId;
+        });
+      }
     }
 
+    // باقي الحقول...
     _semester1Controller.text = s.semester1Grade?.toString() ?? '';
     _semester2Controller.text = s.semester2Grade?.toString() ?? '';
     _semester3Controller.text = s.semester3Grade?.toString() ?? '';
@@ -136,28 +151,93 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     );
   }
 
-  // تحميل القاعات في initState
+  // دالة لتحميل القاعات وتحديد أول قاعة
+  // تحميل القاعات
   Future<void> _loadHalls() async {
+    setState(() {
+      _isLoadingHalls = true;
+    });
+
     try {
       final repo = HallRepository(localDb: getIt());
       _halls = await repo.getAllHalls();
-      setState(() {});
+
+      // إذا كانت هناك قاعات ولم يتم تحديد قاعة بعد
+      if (_halls.isNotEmpty && _selectedHallId == null) {
+        // إذا كان تعديل، استخدم القاعة المحفوظة
+        if (widget.student != null && widget.student!.hallId != null) {
+          _selectedHallId = widget.student!.hallId;
+          // تحميل الأفواج لهذه القاعة
+          await _loadGroups(_selectedHallId!);
+        } else {
+          // إذا كانت إضافة، اختر أول قاعة
+          _selectedHallId = _halls.first.id;
+          await _loadGroups(_selectedHallId!);
+        }
+      }
     } catch (e) {
-      print('خطأ في تحميل القاعات: $e');
+      print('❌ خطأ في تحميل القاعات: $e');
+    } finally {
+      setState(() {
+        _isLoadingHalls = false;
+      });
     }
   }
 
-  // تحميل الأفواج حسب القاعة المختارة
+  // تحميل الأفواج حسب القاعة
   Future<void> _loadGroups(int hallId) async {
+    setState(() {
+      _isLoadingGroups = true;
+      _groups = [];
+      _selectedGroupId = null;
+    });
+
     try {
       final repo = GroupRepository(localDb: getIt());
-      _groups = await repo.getGroupsByHall(hallId);
-      setState(() {});
+      final groups = await repo.getGroupsByHall(hallId);
+
+      setState(() {
+        _groups = groups;
+      });
+
+      // إذا كان تعديل، حاول تعيين الفوج المحفوظ
+      if (widget.student != null && widget.student!.groupId != null) {
+        final exists = groups.any((g) => g.id == widget.student!.groupId);
+        if (exists) {
+          setState(() {
+            _selectedGroupId = widget.student!.groupId;
+          });
+        }
+      }
     } catch (e) {
-      print('خطأ في تحميل الأفواج: $e');
-      _groups = [];
-      setState(() {});
+      print('❌ خطأ في تحميل الأفواج: $e');
+      setState(() {
+        _groups = [];
+      });
+    } finally {
+      setState(() {
+        _isLoadingGroups = false;
+      });
     }
+  }
+
+  // عند تغيير القاعة
+  void _onHallChanged(int? hallId) {
+    setState(() {
+      _selectedHallId = hallId;
+      _selectedGroupId = null;
+      _groups = [];
+    });
+    if (hallId != null) {
+      _loadGroups(hallId);
+    }
+  }
+
+  // عند تغيير الفوج
+  void _onGroupChanged(int? groupId) {
+    setState(() {
+      _selectedGroupId = groupId;
+    });
   }
 
   // ✅ دالة الحفظ المحسنة (تمنع الضغط المتكرر)
@@ -375,72 +455,69 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
             keyboardType: TextInputType.phone,
           ),
 
-          // اختيار القاعة
-          const SizedBox(height: 16),
+          // ==================== اختيار القاعة ====================
           const Text('القاعة', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          DropdownButtonFormField<int>(
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          if (_isLoadingHalls)
+            const Center(child: CircularProgressIndicator())
+          else
+            DropdownButtonFormField<int>(
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.business),
               ),
-              prefixIcon: const Icon(Icons.business),
+              value: _selectedHallId,
+              hint: const Text('-- اختر قاعة --'),
+              isExpanded: true,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('-- بدون قاعة --'),
+                ),
+                ..._halls.map((hall) {
+                  return DropdownMenuItem(
+                    value: hall.id,
+                    child: Text(hall.name),
+                  );
+                }),
+              ],
+              onChanged: _onHallChanged,
             ),
-            value: _selectedHallId,
-            hint: const Text('-- اختر قاعة --'),
-            items: [
-              const DropdownMenuItem(
-                value: null,
-                child: Text('-- بدون قاعة --'),
-              ),
-              ..._halls.map((hall) {
-                return DropdownMenuItem(value: hall.id, child: Text(hall.name));
-              }),
-            ],
-            onChanged: (value) async {
-              setState(() {
-                _selectedHallId = value;
-                _selectedGroupId = null;
-                _groups = [];
-              });
-              if (value != null) {
-                await _loadGroups(value);
-              }
-            },
-          ),
 
           const SizedBox(height: 16),
 
-          // اختيار الفوج
+          // ==================== اختيار الفوج ====================
           const Text('الفوج', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          DropdownButtonFormField<int>(
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          if (_isLoadingGroups)
+            const Center(child: CircularProgressIndicator())
+          else
+            DropdownButtonFormField<int>(
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.group),
               ),
-              prefixIcon: const Icon(Icons.group),
+              value: _selectedGroupId,
+              hint: const Text('-- اختر فوج --'),
+              isExpanded: true,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('-- بدون فوج --'),
+                ),
+                ..._groups.map((group) {
+                  return DropdownMenuItem(
+                    value: group.id,
+                    child: Text(group.name),
+                  );
+                }),
+              ],
+              onChanged: _onGroupChanged,
             ),
-            value: _selectedGroupId,
-            hint: const Text('-- اختر فوج --'),
-            items: [
-              const DropdownMenuItem(
-                value: null,
-                child: Text('-- بدون فوج --'),
-              ),
-              ..._groups.map((group) {
-                return DropdownMenuItem(
-                  value: group.id,
-                  child: Text(group.name),
-                );
-              }),
-            ],
-            onChanged: (value) {
-              setState(() {
-                _selectedGroupId = value;
-              });
-            },
-          ),
         ],
       ),
     );

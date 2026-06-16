@@ -10,6 +10,7 @@ import '../../core/utils/responsive_utils.dart';
 import '../../data/models/student_model.dart';
 import '../../injection/dependency_injection.dart';
 import 'add_edit_student_screen.dart';
+import 'qr_scanner_screen.dart';
 import 'student_profile_screen.dart';
 
 class StudentsListScreen extends StatefulWidget {
@@ -80,11 +81,30 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
             ? const Text('الطلبة')
             : const Text('قائمة الطلبة'),
         actions: [
+          /* 
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () {
               context.push('/qr_scanner');
             },
+          ),
+        */
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+              );
+              if (result != null && mounted) {
+                final studentId = int.tryParse(result);
+                if (studentId != null) {
+                  // الانتقال مباشرة إلى ملف الطالب
+                  context.push('/student/$studentId');
+                }
+              }
+            },
+            tooltip: 'مسح QR للطالب',
           ),
         ],
       ),
@@ -391,6 +411,73 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+
+                // ✅ عرض القاعة والفوج
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (student.hallId != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.business,
+                              size: 12,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'قاعة ${student.hallId}', // يمكن جلب الاسم من قاعدة البيانات
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (student.groupId != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.group,
+                              size: 12,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'فوج ${student.groupId}', // يمكن جلب الاسم من قاعدة البيانات
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+
                 Row(
                   children: [
                     Expanded(
@@ -405,38 +492,6 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                     ),
                   ],
                 ),
-
-                // ✅ عرض القاعة والفوج
-                if (student.hallId != null)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.business,
-                          size: 12,
-                          color: Colors.blue.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'قاعة ${student.hallId}', // مؤقت، سيتم جلب الاسم لاحقاً
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
               ],
             ),
           ),
