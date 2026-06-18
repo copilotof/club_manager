@@ -17,12 +17,34 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(
+    final db = await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _createTables,
-      onUpgrade: _onUpgrade, // ✅ إضافة دالة الترقية
+      onUpgrade: _onUpgrade,
     );
+
+    // ✅ إنشاء جدول extra_sessions مباشرة إذا لم يكن موجوداً
+    try {
+      await db.execute('''
+      CREATE TABLE IF NOT EXISTS extra_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        hall_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(date, hall_id, group_id)
+      )
+    ''');
+      print('✅ تم إنشاء جدول extra_sessions (في _initDB)');
+    } catch (e) {
+      print('⚠️ خطأ في إنشاء جدول extra_sessions: $e');
+    }
+
+    return db;
   }
 
   Future<void> _createTables(Database db, int version) async {
@@ -323,9 +345,44 @@ class AppDatabase {
       )
     ''');
 
+        await db.execute('''
+  CREATE TABLE extra_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    hall_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(date, hall_id, group_id)
+  )
+''');
+
         print('✅ تم إنشاء جداول القاعات والأفواج والحصص');
       } catch (e) {
         print('⚠️ خطأ في إنشاء الجداول: $e');
+      }
+    }
+
+    if (oldVersion < 6) {
+      try {
+        await db.execute('''
+        CREATE TABLE IF NOT EXISTS extra_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          hall_id INTEGER NOT NULL,
+          group_id INTEGER NOT NULL,
+          start_time TEXT NOT NULL,
+          end_time TEXT NOT NULL,
+          reason TEXT,
+          created_at TEXT NOT NULL,
+          UNIQUE(date, hall_id, group_id)
+        )
+      ''');
+        print('✅ تم إنشاء جدول extra_sessions');
+      } catch (e) {
+        print('⚠️ خطأ في إنشاء جدول extra_sessions: $e');
       }
     }
   }

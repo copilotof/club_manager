@@ -1,16 +1,21 @@
 // lib/presentation/screens/attendance_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
+import '../../data/datasources/local/app_database.dart';
 import '../../data/models/hall_model.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/session_model.dart';
 import '../../data/models/student_model.dart';
 import '../../data/models/attendance_record.dart';
+import '../../data/models/extra_session_model.dart';
 import '../../data/repositories/hall_repository.dart';
 import '../../data/repositories/group_repository.dart';
 import '../../data/repositories/student_repository.dart';
+import '../../data/repositories/attendance_repository.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
+import '../../core/widgets/custom_snackbar.dart';
 import 'qr_scanner_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
@@ -21,42 +26,42 @@ class AttendanceScreen extends StatefulWidget {
 }
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
+  // ==================== المستودعات ====================
   late HallRepository _hallRepo;
   late GroupRepository _groupRepo;
   late StudentRepository _studentRepo;
+  late AttendanceRepository _attendanceRepo;
 
-  // ==================== المتغيرات ====================
+  // ==================== المتغيرات الأساسية ====================
+  DateTime _selectedDate = DateTime.now();
+
+  // قوائم البيانات
   List<HallModel> _halls = [];
   List<GroupModel> _groups = [];
   List<SessionModel> _sessions = [];
   List<StudentModel> _students = [];
   List<AttendanceRecord> _records = [];
 
+  // القيم المختارة
   int? _selectedHallId;
   int? _selectedGroupId;
   int? _selectedSessionId;
 
+  // حالة التحميل
   bool _isLoading = true;
-  bool _isLoadingGroups = false;
-  bool _isLoadingSessions = false;
-  bool _isLoadingStudents = false;
+  bool _isLoadingData = false;
+  bool _isSaving = false;
+  bool _isCreatingExtraSession = false;
 
-  // معلومات الاقتراح التلقائي
-  String _autoSuggestionMessage = '';
+  // رسائل وأخطاء
+  String _message = '';
+  bool _hasSessions = false;
   bool _autoSelected = false;
+  bool _isExtraSession = false;
+  bool _isFieldsDisabled = false;
 
-  String _filterType = 'all'; // 'all', 'present', 'absent'
-
-  List<AttendanceRecord> get _filteredRecords {
-    switch (_filterType) {
-      case 'present':
-        return _records.where((r) => r.isPresent).toList();
-      case 'absent':
-        return _records.where((r) => !r.isPresent).toList();
-      default:
-        return _records;
-    }
-  }
+  // بيانات الحصة الاستثنائية المحفوظة
+  ExtraSessionModel? _extraSession;
 
   @override
   void initState() {
@@ -64,294 +69,742 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _hallRepo = HallRepository(localDb: getIt());
     _groupRepo = GroupRepository(localDb: getIt());
     _studentRepo = StudentRepository(localDb: getIt(), remoteApi: getIt());
-    _loadAndAutoSelect();
+    _attendanceRepo = AttendanceRepository(
+      localDb: getIt(),
+      remoteApi: getIt(),
+      connectivity: getIt(),
+    );
+
+    _loadAllData();
   }
 
-  // ==================== التحميل والاختيار التلقائي ====================
-  Future<void> _loadAndAutoSelect() async {
+  // ==================== تحميل جميع البيانات ====================
+  Future<void> _loadAllData() async {
     setState(() {
       _isLoading = true;
-      _autoSuggestionMessage = 'جاري البحث عن الحصة المناسبة...';
+      _message = 'جاري تحميل البيانات...';
+      _isExtraSession = false;
+      _isFieldsDisabled = false;
+      _extraSession = null;
     });
 
     try {
-      // 1. تحميل جميع القاعات
       _halls = await _hallRepo.getAllHalls();
 
       if (_halls.isEmpty) {
-        _autoSuggestionMessage =
-            '⚠️ لا توجد قاعات مسجلة. الرجاء إضافة قاعة في الإعدادات.';
+        _message = '⚠️ لا توجد قاعات مسجلة. الرجاء إضافة قاعة في الإعدادات.';
         setState(() {
           _isLoading = false;
         });
         return;
       }
 
-      // 2. تحميل جميع الأفواج والحصص والبحث عن الحصة المناسبة
-      await _findBestSession();
+      // التحقق من وجود حصة استثنائية لهذا اليوم
+      await _checkExtraSession();
+
+      // إذا لم توجد حصة استثنائية، ابحث عن الحصص العادية
+      if (_extraSession == null) {
+        await _findSessionsByDate();
+      }
     } catch (e) {
-      print('❌ خطأ في التحميل: $e');
-      _autoSuggestionMessage = '❌ حدث خطأ في تحميل البيانات';
+      print('❌ خطأ في تحميل البيانات: $e');
+      _message = '❌ حدث خطأ في تحميل البيانات';
       setState(() {
         _isLoading = false;
       });
     }
   }
 
-  // ==================== البحث عن أفضل حصة (القاعة + الفوج + الحصة) ====================
-  Future<void> _findBestSession() async {
-    final now = DateTime.now();
-    final currentDayOfWeek = now.weekday; // 1=الإثنين, 7=الأحد
-    final currentTime = now.hour * 60 + now.minute; // الوقت بالدقائق
+  // ==================== التحقق من وجود حصة استثنائية ====================
+  Future<void> _checkExtraSession() async {
+    try {
+      final db = await getIt<AppDatabase>().database;
 
-    // تحويل الأيام (للتطابق مع SessionModel حيث 0=الأحد)
-    final sessionDayMap = {
-      7: 0, // الأحد
-      1: 1, // الإثنين
-      2: 2, // الثلاثاء
-      3: 3, // الأربعاء
-      4: 4, // الخميس
-      5: 5, // الجمعة
-      6: 6, // السبت
-    };
-    final todaySessionDay = sessionDayMap[currentDayOfWeek];
+      // ✅ توحيد تنسيق التاريخ
+      final dateStr =
+          '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
 
-    // هيكل لتخزين أفضل نتيجة
-    BestSessionResult? bestResult;
+      final result = await db.query(
+        'extra_sessions',
+        where: 'date = ?',
+        whereArgs: [dateStr],
+      );
 
-    // 3. المرور على جميع القاعات
-    for (var hall in _halls) {
-      // جلب أفواج القاعة
-      final groups = await _groupRepo.getGroupsByHall(hall.id!);
+      if (result.isNotEmpty) {
+        _extraSession = ExtraSessionModel.fromMap(result.first);
+        _isExtraSession = true;
+        _hasSessions = true;
+        _isFieldsDisabled = true; // تعطيل الحقول
 
-      for (var group in groups) {
-        // جلب حصص الفوج
-        final sessions = await _groupRepo.getSessionsByGroup(group.id!);
+        _selectedHallId = _extraSession!.hallId;
+        _selectedGroupId = _extraSession!.groupId;
 
-        // حصص اليوم الحالي فقط
-        final todaySessions = sessions
-            .where((s) => s.dayOfWeek == todaySessionDay)
-            .toList();
+        // تحميل البيانات
+        await _loadGroups(_extraSession!.hallId);
+        await _loadSessionsForGroup(_extraSession!.groupId);
+        await _loadAttendance(_extraSession!.groupId);
 
-        for (var session in todaySessions) {
-          final sessionStartMinutes =
-              session.startTime.hour * 60 + session.startTime.minute;
-          final sessionEndMinutes =
-              session.endTime.hour * 60 + session.endTime.minute;
+        _message = '📝 حصة استثنائية: ${_formatDate(_selectedDate)}';
+        if (_extraSession!.reason != null) {
+          _message += ' - السبب: ${_extraSession!.reason}';
+        }
 
-          int priority;
-          String status;
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في التحقق من الحصة الاستثنائية: $e');
+    }
+  }
 
-          // تحديد أولوية الحصة
-          if (currentTime >= sessionStartMinutes &&
-              currentTime <= sessionEndMinutes) {
-            // حصة جارية الآن (أفضل أولوية)
-            priority = 1;
-            status = 'جارية الآن';
-          } else if (sessionStartMinutes > currentTime) {
-            // حصة قادمة (ثاني أفضل أولوية)
-            priority = 2;
-            status = 'قادمة';
-          } else {
-            // حصة انتهت (أقل أولوية)
-            priority = 3;
-            status = 'انتهت';
-          }
+  // ==================== البحث عن الحصص حسب التاريخ (بما فيها الاستثنائية) ====================
+  // ==================== البحث عن الحصص حسب التاريخ ====================
+  Future<void> _findSessionsByDate() async {
+    setState(() {
+      _isLoadingData = true;
+      _message = 'جاري البحث عن حصص في هذا اليوم...';
+      _isExtraSession = false;
+      _isFieldsDisabled = false;
+      _extraSession = null;
+    });
 
-          // حساب الفرق الزمني (للمقارنة بين الحصص القادمة)
-          int timeDiff;
-          if (sessionStartMinutes > currentTime) {
-            timeDiff = sessionStartMinutes - currentTime;
-          } else {
-            timeDiff = 24 * 60 - (currentTime - sessionStartMinutes);
-          }
+    try {
+      final selectedWeekday = _selectedDate.weekday;
+      final sessionDayMap = {7: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6};
+      final targetDay = sessionDayMap[selectedWeekday] ?? 0;
 
-          final result = BestSessionResult(
-            hall: hall,
-            group: group,
-            session: session,
-            priority: priority,
-            timeDiff: timeDiff,
-            status: status,
-          );
+      List<SessionWithDetails> foundSessions = [];
 
-          // مقارنة مع أفضل نتيجة حالية
-          if (bestResult == null) {
-            bestResult = result;
-          } else if (result.priority < bestResult.priority) {
-            bestResult = result;
-          } else if (result.priority == bestResult.priority &&
-              result.timeDiff < bestResult.timeDiff) {
-            bestResult = result;
+      // ==================== 1. البحث عن الحصص العادية ====================
+      for (var hall in _halls) {
+        final groups = await _groupRepo.getGroupsByHall(hall.id!);
+
+        for (var group in groups) {
+          final sessions = await _groupRepo.getSessionsByGroup(group.id!);
+          final daySessions =
+              sessions.where((s) => s.dayOfWeek == targetDay).toList();
+
+          for (var session in daySessions) {
+            foundSessions.add(
+              SessionWithDetails(
+                hall: hall,
+                group: group,
+                session: session,
+                isExtra: false,
+              ),
+            );
           }
         }
       }
-    }
 
-    // 4. تطبيق النتيجة الأفضل
-    if (bestResult != null) {
-      setState(() {
-        _selectedHallId = bestResult!.hall.id;
-        _selectedGroupId = bestResult!.group.id;
-        _selectedSessionId = bestResult!.session.id;
-        _autoSelected = true;
-      });
+      // ==================== 2. البحث عن الحصص الاستثنائية ====================
+      try {
+        final db = await getIt<AppDatabase>().database;
+        // ✅ توحيد تنسيق التاريخ
+        final dateStr =
+            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+        print('🔍 البحث عن حصة استثنائية في تاريخ: $dateStr');
 
-      // بناء رسالة الاقتراح
-      if (bestResult.status == 'جارية الآن') {
-        _autoSuggestionMessage =
-            '✓ الحصة الجارية الآن: ${bestResult.hall.name} → ${bestResult.group.name} → ${bestResult.session.dayName} ${_formatTime(bestResult.session.startTime)} - ${_formatTime(bestResult.session.endTime)}';
-      } else if (bestResult.status == 'قادمة') {
-        final hours = bestResult.timeDiff ~/ 60;
-        final minutes = bestResult.timeDiff % 60;
-        _autoSuggestionMessage =
-            '⏰ الحصة القادمة بعد ${hours} ساعة و ${minutes} دقيقة: ${bestResult.hall.name} → ${bestResult.group.name} → ${bestResult.session.dayName} ${_formatTime(bestResult.session.startTime)} - ${_formatTime(bestResult.session.endTime)}';
-      } else {
-        _autoSuggestionMessage =
-            '📅 آخر حصة لهذا اليوم: ${bestResult.hall.name} → ${bestResult.group.name} → ${bestResult.session.dayName} ${_formatTime(bestResult.session.startTime)} - ${_formatTime(bestResult.session.endTime)}';
+        final extraResult = await db.query(
+          'extra_sessions',
+          where: 'date = ?',
+          whereArgs: [dateStr],
+        );
+
+        print('📊 عدد الحصص الاستثنائية: ${extraResult.length}');
+
+        for (var row in extraResult) {
+          final extra = ExtraSessionModel.fromMap(row);
+          print(
+            '📝 حصة استثنائية: hall=${extra.hallId}, group=${extra.groupId}, start=${extra.startTime}, end=${extra.endTime}',
+          );
+
+          // جلب القاعة
+          final hall = _halls.firstWhere(
+            (h) => h.id == extra.hallId,
+            orElse: () => HallModel(id: extra.hallId, name: 'قاعة غير معروفة'),
+          );
+
+          // جلب الفوج
+          final groups = await _groupRepo.getGroupsByHall(extra.hallId);
+          final group = groups.firstWhere(
+            (g) => g.id == extra.groupId,
+            orElse: () => GroupModel(
+              id: extra.groupId,
+              hallId: extra.hallId,
+              name: 'فوج غير معروف',
+            ),
+          );
+
+          // إنشاء SessionModel مؤقت للحصة الاستثنائية
+          final tempSession = SessionModel(
+            id: -extra.id!, // قيمة سالبة للتمييز
+            groupId: extra.groupId,
+            dayOfWeek: targetDay,
+            startTime: extra.startTime,
+            endTime: extra.endTime,
+          );
+
+          foundSessions.add(
+            SessionWithDetails(
+              hall: hall,
+              group: group,
+              session: tempSession,
+              isExtra: true,
+              extraReason: extra.reason,
+              extraId: extra.id,
+            ),
+          );
+        }
+      } catch (e) {
+        print('⚠️ خطأ في البحث عن الحصص الاستثنائية: $e');
       }
 
-      // تحميل الأفواج والحصص والطلاب
-      await _loadGroups(bestResult.hall.id!);
-      await _loadSessionsForGroup(bestResult.group.id!);
-      await _loadStudents(bestResult.group.id!);
-    } else {
-      _autoSuggestionMessage = '📅 لا توجد حصص تدريبية مسجلة لهذا اليوم';
-    }
+      // ==================== تحليل النتائج ====================
+      if (foundSessions.isEmpty) {
+        setState(() {
+          _hasSessions = false;
+          _message =
+              '📅 لا توجد حصص تدريبية في يوم ${_formatDate(_selectedDate)}';
+          _records = [];
+          _students = [];
+          _selectedHallId = null;
+          _selectedGroupId = null;
+          _selectedSessionId = null;
+          _isLoadingData = false;
+          _isLoading = false;
+        });
+        return;
+      }
 
-    setState(() {
-      _isLoading = false;
-    });
+      setState(() {
+        _hasSessions = true;
+        _isFieldsDisabled = true;
+      });
+
+      // ==================== اختيار الحصة المناسبة ====================
+      SessionWithDetails? bestSession;
+
+      // إعطاء الأولوية للحصة الاستثنائية
+      final extraSessions = foundSessions.where((s) => s.isExtra).toList();
+      if (extraSessions.isNotEmpty) {
+        bestSession = extraSessions.first;
+        print('✅ تم اختيار حصة استثنائية تلقائياً');
+      } else {
+        // اختيار الحصة العادية الأقرب
+        final now = DateTime.now();
+        final currentTime = now.hour * 60 + now.minute;
+
+        if (_selectedDate.year == now.year &&
+            _selectedDate.month == now.month &&
+            _selectedDate.day == now.day) {
+          // اليوم الحالي: اختر الأقرب
+          int minDiff = 999999;
+          for (var session in foundSessions) {
+            final sessionStartMinutes = session.session.startTime.hour * 60 +
+                session.session.startTime.minute;
+            final diff = (sessionStartMinutes - currentTime).abs();
+            if (diff < minDiff) {
+              minDiff = diff;
+              bestSession = session;
+            }
+          }
+        } else {
+          // تاريخ مختلف: اختر الأول
+          bestSession = foundSessions.first;
+        }
+      }
+
+      if (bestSession != null) {
+        setState(() {
+          _selectedHallId = bestSession!.hall.id;
+          _selectedGroupId = bestSession!.group.id;
+          _selectedSessionId = bestSession!.session.id;
+          _autoSelected = true;
+          _isExtraSession = bestSession.isExtra;
+
+          if (bestSession.isExtra) {
+            _extraSession = ExtraSessionModel(
+              id: bestSession.extraId,
+              date: DateTime(
+                  _selectedDate.year, _selectedDate.month, _selectedDate.day),
+              hallId: bestSession.hall.id!,
+              groupId: bestSession.group.id!,
+              startTime: bestSession.session.startTime,
+              endTime: bestSession.session.endTime,
+              reason: bestSession.extraReason,
+              createdAt: DateTime.now(),
+            );
+          }
+        });
+
+        // تحميل البيانات
+        await _loadGroups(bestSession.hall.id!);
+        await _loadSessionsForGroup(bestSession.group.id!);
+        await _loadAttendance(bestSession.group.id!);
+
+        // بناء رسالة الحالة
+        String statusText = '';
+        if (foundSessions.length > 1) {
+          statusText = ' (${foundSessions.length} حصص في هذا اليوم)';
+        }
+        if (bestSession.isExtra) {
+          statusText += ' 📝 حصة استثنائية';
+          if (bestSession.extraReason != null &&
+              bestSession.extraReason!.isNotEmpty) {
+            statusText += ' - ${bestSession.extraReason}';
+          }
+        } else {
+          final now = DateTime.now();
+          if (_selectedDate.year == now.year &&
+              _selectedDate.month == now.month &&
+              _selectedDate.day == now.day) {
+            statusText += ' ✓ الحصة الحالية';
+          }
+        }
+
+        setState(() {
+          _message =
+              '✅ ${bestSession!.hall.name} → ${bestSession!.group.name} → ${bestSession!.session.dayName ?? ""} ${_formatTime(bestSession!.session.startTime)} - ${_formatTime(bestSession!.session.endTime)}$statusText';
+          _isLoadingData = false;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في البحث عن الحصص: $e');
+      setState(() {
+        _message = '❌ حدث خطأ في البحث عن الحصص';
+        _isLoadingData = false;
+        _isLoading = false;
+      });
+    }
   }
 
-  // ==================== تحميل الأفواج حسب القاعة ====================
-  Future<void> _loadGroups(int hallId) async {
-    setState(() {
-      _isLoadingGroups = true;
-    });
+  // ==================== إنشاء حصة استثنائية ====================
+  Future<void> _createExtraSession() async {
+    if (_halls.isEmpty) {
+      CustomSnackbar.showError(
+        context,
+        'لا توجد قاعات. الرجاء إضافة قاعة في الإعدادات.',
+      );
+      return;
+    }
+
+    int? selectedHallId = _halls.first.id;
+    int? selectedGroupId;
+    TimeOfDay startTime = const TimeOfDay(hour: 16, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 30);
+    String? reason;
+    List<GroupModel> groups = [];
 
     try {
-      _groups = await _groupRepo.getGroupsByHall(hallId);
+      groups = await _groupRepo.getGroupsByHall(selectedHallId!);
+      if (groups.isNotEmpty) selectedGroupId = groups.first.id;
     } catch (e) {
       print('❌ خطأ في تحميل الأفواج: $e');
-    } finally {
-      setState(() {
-        _isLoadingGroups = false;
-      });
+    }
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('حصة استثنائية'),
+            content: SizedBox(
+              width: 320,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'أنشئ حصة تدريبية استثنائية لهذا اليوم',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // اختيار القاعة
+                    DropdownButtonFormField<int>(
+                      value: selectedHallId,
+                      decoration: const InputDecoration(
+                        labelText: 'القاعة *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.business),
+                      ),
+                      items: _halls.map((hall) {
+                        return DropdownMenuItem(
+                          value: hall.id,
+                          child: Text(hall.name),
+                        );
+                      }).toList(),
+                      onChanged: (value) async {
+                        selectedHallId = value;
+                        if (value != null) {
+                          final repo = GroupRepository(localDb: getIt());
+                          groups = await repo.getGroupsByHall(value);
+                          selectedGroupId =
+                              groups.isNotEmpty ? groups.first.id : null;
+                          setStateDialog(() {});
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // اختيار الفوج
+                    DropdownButtonFormField<int>(
+                      value: selectedGroupId,
+                      decoration: const InputDecoration(
+                        labelText: 'الفوج *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.group),
+                      ),
+                      items: groups.map((group) {
+                        return DropdownMenuItem(
+                          value: group.id,
+                          child: Text(group.name),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        selectedGroupId = value;
+                        setStateDialog(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // وقت البداية
+                    ListTile(
+                      title: const Text('وقت البداية *'),
+                      subtitle: Text(
+                        '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                      ),
+                      trailing: const Icon(Icons.access_time),
+                      onTap: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: startTime,
+                          builder: (context, child) {
+                            return MediaQuery(
+                              data: const MediaQueryData().copyWith(
+                                alwaysUse24HourFormat: true,
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          startTime = picked;
+                          setStateDialog(() {});
+                        }
+                      },
+                    ),
+
+                    // وقت النهاية
+                    ListTile(
+                      title: const Text('وقت النهاية *'),
+                      subtitle: Text(
+                        '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                      ),
+                      trailing: const Icon(Icons.access_time),
+                      onTap: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: endTime,
+                          builder: (context, child) {
+                            return MediaQuery(
+                              data: const MediaQueryData().copyWith(
+                                alwaysUse24HourFormat: true,
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          endTime = picked;
+                          setStateDialog(() {});
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ✅ سبب الحصة الاستثنائية (اختياري)
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'سبب الحصة الاستثنائية (اختياري)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.note),
+                      ),
+                      maxLines: 2,
+                      onChanged: (value) {
+                        reason = value.trim().isEmpty ? null : value.trim();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('إلغاء'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  if (selectedHallId == null || selectedGroupId == null) {
+                    CustomSnackbar.showError(
+                      context,
+                      'الرجاء اختيار القاعة والفوج',
+                    );
+                    return;
+                  }
+
+                  // حفظ الحصة الاستثنائية في قاعدة البيانات
+                  try {
+                    final db = await getIt<AppDatabase>().database;
+                    final extraSession = ExtraSessionModel(
+                      date: DateTime(_selectedDate.year, _selectedDate.month,
+                          _selectedDate.day), // ✅ توحيد التاريخ
+
+                      hallId: selectedHallId!,
+                      groupId: selectedGroupId!,
+                      startTime: startTime,
+                      endTime: endTime,
+                      reason: reason,
+                      createdAt: DateTime.now(),
+                    );
+
+                    await db.insert('extra_sessions', extraSession.toMap());
+
+                    Navigator.pop(context, {
+                      'hallId': selectedHallId,
+                      'groupId': selectedGroupId,
+                      'startTime': startTime,
+                      'endTime': endTime,
+                      'reason': reason,
+                    });
+
+                    CustomSnackbar.showSuccess(
+                      context,
+                      'تم إنشاء الحصة الاستثنائية بنجاح',
+                    );
+                  } catch (e) {
+                    print('❌ خطأ في حفظ الحصة الاستثنائية: $e');
+                    CustomSnackbar.showError(
+                      context,
+                      'فشل حفظ الحصة الاستثنائية',
+                    );
+                  }
+                },
+                child: const Text('إنشاء'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result != null) {
+      // إعادة تحميل البيانات لعرض الحصة الاستثنائية
+      await _loadAllData();
     }
   }
 
-  // ==================== تحميل الحصص لفوج معين ====================
-  Future<void> _loadSessionsForGroup(int groupId) async {
-    setState(() {
-      _isLoadingSessions = true;
-    });
+  // ==================== تحميل الأفواج ====================
+  Future<void> _loadGroups(int hallId) async {
+    try {
+      _groups = await _groupRepo.getGroupsByHall(hallId);
+      setState(() {});
+    } catch (e) {
+      print('❌ خطأ في تحميل الأفواج: $e');
+    }
+  }
 
+  // ==================== تحميل الحصص ====================
+  Future<void> _loadSessionsForGroup(int groupId) async {
     try {
       _sessions = await _groupRepo.getSessionsByGroup(groupId);
+      setState(() {});
     } catch (e) {
       print('❌ خطأ في تحميل الحصص: $e');
-    } finally {
-      setState(() {
-        _isLoadingSessions = false;
-      });
     }
   }
 
-  // ==================== تحميل طلاب الفوج ====================
-  Future<void> _loadStudents(int groupId) async {
+  // ==================== تحميل الحضور ====================
+  Future<void> _loadAttendance(int groupId) async {
     setState(() {
-      _isLoadingStudents = true;
+      _isLoadingData = true;
     });
 
     try {
       _students = await _studentRepo.getStudentsByGroup(groupId);
 
+      final records = await _attendanceRepo.getAttendanceForGroup(
+        groupId: groupId,
+        date: DateTime(
+            _selectedDate.year, _selectedDate.month, _selectedDate.day),
+      );
+
       _records = _students.map((student) {
-        return AttendanceRecord(
-          studentId: student.id!,
-          studentName: student.firstName,
-          studentLastName: student.lastName,
-          beltColor: null,
-          isPresent: false,
-          wasAutoGenerated: true,
-          markedAt: null,
-          excuseReason: null,
+        final existing = records.firstWhere(
+          (r) => r.studentId == student.id,
+          orElse: () => AttendanceRecord(
+            studentId: student.id!,
+            studentName: student.firstName,
+            studentLastName: student.lastName,
+            beltColor: null,
+            isPresent: false,
+            wasAutoGenerated: true,
+            markedAt: null,
+            excuseReason: null,
+          ),
         );
+        return existing;
       }).toList();
     } catch (e) {
-      print('❌ خطأ في تحميل الطلاب: $e');
+      print('❌ خطأ في تحميل الحضور: $e');
     } finally {
       setState(() {
-        _isLoadingStudents = false;
+        _isLoadingData = false;
       });
     }
   }
 
-  // ==================== تغيير الحصة يدوياً ====================
-  Future<void> _onSessionChanged(int? sessionId) async {
-    if (sessionId == null) return;
-
-    setState(() {
-      _selectedSessionId = sessionId;
-      _autoSelected = false;
-      _autoSuggestionMessage = '';
+  // ==================== اختيار التاريخ ====================
+  Future<void> _selectDate() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SizedBox(
+        height: 280,
+        child: CupertinoDatePicker(
+          mode: CupertinoDatePickerMode.date,
+          initialDateTime: _selectedDate,
+          maximumDate: DateTime.now(),
+          minimumDate: DateTime(2020),
+          onDateTimeChanged: (DateTime newDate) {
+            setState(() {
+              _selectedDate = newDate;
+            });
+          },
+        ),
+      ),
+    ).then((_) {
+      _loadAllData();
     });
-
-    if (_selectedGroupId != null) {
-      await _loadStudents(_selectedGroupId!);
-    }
-  }
-
-  // ==================== تغيير الفوج يدوياً ====================
-  Future<void> _onGroupChanged(int? groupId) async {
-    if (groupId == null) return;
-
-    setState(() {
-      _selectedGroupId = groupId;
-      _selectedSessionId = null;
-      _autoSelected = false;
-      _autoSuggestionMessage = '';
-      _sessions = [];
-      _students = [];
-      _records = [];
-    });
-
-    await _loadSessionsForGroup(groupId);
-  }
-
-  // ==================== تغيير القاعة يدوياً ====================
-  Future<void> _onHallChanged(int? hallId) async {
-    if (hallId == null) return;
-
-    setState(() {
-      _selectedHallId = hallId;
-      _selectedGroupId = null;
-      _selectedSessionId = null;
-      _autoSelected = false;
-      _autoSuggestionMessage = '';
-      _groups = [];
-      _sessions = [];
-      _students = [];
-      _records = [];
-    });
-
-    await _loadGroups(hallId);
   }
 
   // ==================== تغيير حالة الحضور ====================
-  void _toggleAttendance(int index) {
+  void _toggleAttendance(int index, {bool isPresent = true}) {
     setState(() {
-      _records[index].isPresent = !_records[index].isPresent;
+      _records[index].isPresent = isPresent;
       _records[index].wasAutoGenerated = false;
       _records[index].markedAt = DateTime.now();
-      if (_records[index].isPresent) {
+      if (isPresent) {
         _records[index].excuseReason = null;
       }
     });
+    _saveAttendanceAutomatically();
   }
 
-  // ==================== عرض نافذة سبب الغياب ====================
+  // ==================== حفظ الحضور تلقائياً ====================
+  Future<void> _saveAttendanceAutomatically() async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      for (var record in _records) {
+        if (!record.wasAutoGenerated) {
+          if (record.isPresent) {
+            await _attendanceRepo.markPresent(
+              studentId: record.studentId,
+              groupId: _selectedGroupId!,
+              date: DateTime(
+                  _selectedDate.year, _selectedDate.month, _selectedDate.day),
+            );
+          } else {
+            await _attendanceRepo.markAbsent(
+              studentId: record.studentId,
+              groupId: _selectedGroupId!,
+              date: DateTime(
+                  _selectedDate.year, _selectedDate.month, _selectedDate.day),
+              excuseReason: record.excuseReason,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ خطأ في حفظ الحضور: $e');
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
+  // ==================== مسح QR Code ====================
+  Future<void> _scanQRCode() async {
+    if (_selectedGroupId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء اختيار حصة تدريبية أولاً'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const QRScannerScreen(
+            title: 'مسح حضور الطلاب',
+            continuousMode: true,
+          ),
+        ),
+      );
+
+      if (result != null && mounted) {
+        if (result is List<String>) {
+          int successCount = 0;
+          int errorCount = 0;
+
+          for (var code in result) {
+            final studentId = int.tryParse(code);
+            if (studentId != null) {
+              final index = _records.indexWhere(
+                (r) => r.studentId == studentId,
+              );
+              if (index != -1) {
+                if (!_records[index].isPresent) {
+                  _toggleAttendance(index, isPresent: true);
+                  successCount++;
+                }
+              } else {
+                errorCount++;
+              }
+            }
+          }
+
+          String message = '';
+          if (successCount > 0) message += '✅ تم تسجيل حضور $successCount طالب';
+          if (errorCount > 0) message += ' ❌ $errorCount طالب غير موجود';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: errorCount > 0 ? Colors.orange : Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ خطأ في مسح QR Code: $e');
+    }
+  }
+
+  // ==================== نافذة سبب الغياب ====================
   void _showExcuseDialog(int index) async {
     final controller = TextEditingController(
       text: _records[index].excuseReason,
@@ -377,10 +830,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           TextButton(
             onPressed: () {
               setState(() {
-                _records[index].excuseReason = controller.text.isEmpty
-                    ? null
-                    : controller.text;
+                _records[index].excuseReason =
+                    controller.text.isEmpty ? null : controller.text;
               });
+              _saveAttendanceAutomatically();
               Navigator.pop(context);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.orange),
@@ -391,15 +844,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  // ==================== حفظ الحضور ====================
-  Future<void> _saveAttendance() async {
-    // TODO: حفظ سجلات الحضور في قاعدة البيانات
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('تم حفظ الحضور بنجاح')));
+  // ==================== دوال مساعدة ====================
+  String _formatDate(DateTime date) {
+    return DateFormat('yyyy/MM/dd', 'en_US').format(date);
   }
 
-  // ==================== دوال مساعدة ====================
   String _formatTime(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
@@ -413,114 +862,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   int get _absentCount => _records.where((r) => !r.isPresent).length;
   double get _attendancePercentage =>
       _records.isEmpty ? 0 : (_presentCount / _records.length) * 100;
-
-  // ==================== مسح QR Code ====================
-  Future<void> _scanQRCode() async {
-    try {
-      // ✅ فتح QR Scanner في وضع المسح المتسلسل
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const QRScannerScreen(
-            title: 'مسح حضور الطلاب',
-            continuousMode: true,
-          ),
-        ),
-      );
-
-      if (result != null && mounted) {
-        // ✅ إذا كانت النتيجة قائمة (وضع المسح المتسلسل)
-        if (result is List<String>) {
-          int count = 0;
-          for (var code in result) {
-            final studentId = int.tryParse(code);
-            if (studentId != null) {
-              final index = _records.indexWhere(
-                (r) => r.studentId == studentId,
-              );
-              if (index != -1) {
-                _toggleAttendance(index);
-                count++;
-              }
-            }
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ تم تسجيل حضور $count طالب'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-        // ✅ إذا كانت النتيجة نص (وضع المسح العادي)
-        else if (result is String) {
-          final studentId = int.tryParse(result);
-          if (studentId != null) {
-            final index = _records.indexWhere((r) => r.studentId == studentId);
-            if (index != -1) {
-              _toggleAttendance(index);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '✓ تم تسجيل حضور ${_records[index].studentName}',
-                  ),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ خطأ في مسح QR Code: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('❌ حدث خطأ في مسح الكود'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  // ==================== تسجيل حضور الجميع ====================
-  void _markAllPresent() {
-    setState(() {
-      for (var record in _records) {
-        record.isPresent = true;
-        record.wasAutoGenerated = false;
-        record.markedAt = DateTime.now();
-        record.excuseReason = null;
-      }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✓ تم تسجيل حضور جميع الطلاب'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
-
-  // ==================== تسجيل غياب الجميع ====================
-  void _markAllAbsent() {
-    setState(() {
-      for (var record in _records) {
-        record.isPresent = false;
-        record.wasAutoGenerated = false;
-        record.markedAt = DateTime.now();
-      }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✓ تم تسجيل غياب جميع الطلاب'),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
 
   // ==================== واجهة المستخدم ====================
   @override
@@ -543,45 +884,92 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ==================== رسالة الاقتراح التلقائي ====================
-                  if (_autoSuggestionMessage.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                  // ==================== اختيار التاريخ ====================
+                  InkWell(
+                    onTap: _selectDate,
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: '📅 تاريخ الحصة',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(_formatDate(_selectedDate)),
+                          const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ==================== رسالة الحالة ====================
+                  if (_message.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _autoSelected
+                        color: _message.contains('✅')
                             ? Colors.green.shade50
-                            : Colors.blue.shade50,
+                            : _message.contains('⚠️')
+                                ? Colors.orange.shade50
+                                : _message.contains('❌')
+                                    ? Colors.red.shade50
+                                    : _message.contains('📝')
+                                        ? Colors.purple.shade50
+                                        : Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: _autoSelected
+                          color: _message.contains('✅')
                               ? Colors.green.shade200
-                              : Colors.blue.shade200,
+                              : _message.contains('⚠️')
+                                  ? Colors.orange.shade200
+                                  : _message.contains('❌')
+                                      ? Colors.red.shade200
+                                      : _message.contains('📝')
+                                          ? Colors.purple.shade200
+                                          : Colors.blue.shade200,
                         ),
                       ),
                       child: Row(
                         children: [
                           Icon(
-                            _autoSelected
+                            _message.contains('✅')
                                 ? Icons.check_circle
-                                : Icons.info_outline,
-                            size: 20,
-                            color: _autoSelected
+                                : _message.contains('⚠️')
+                                    ? Icons.warning_amber
+                                    : _message.contains('❌')
+                                        ? Icons.error_outline
+                                        : _message.contains('📝')
+                                            ? Icons.edit_note
+                                            : Icons.info_outline,
+                            color: _message.contains('✅')
                                 ? Colors.green.shade700
-                                : Colors.blue.shade700,
+                                : _message.contains('⚠️')
+                                    ? Colors.orange.shade700
+                                    : _message.contains('❌')
+                                        ? Colors.red.shade700
+                                        : _message.contains('📝')
+                                            ? Colors.purple.shade700
+                                            : Colors.blue.shade700,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              _autoSuggestionMessage,
+                              _message,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: _autoSelected
+                                color: _message.contains('✅')
                                     ? Colors.green.shade700
-                                    : Colors.blue.shade700,
+                                    : _message.contains('⚠️')
+                                        ? Colors.orange.shade700
+                                        : _message.contains('❌')
+                                            ? Colors.red.shade700
+                                            : _message.contains('📝')
+                                                ? Colors.purple.shade700
+                                                : Colors.blue.shade700,
                               ),
                             ),
                           ),
@@ -589,180 +977,217 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ),
                     ),
 
-                  // ==================== 1. اختيار القاعة ====================
-                  const Text(
-                    'القاعة',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<int>(
-                    value: _selectedHallId,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 16),
+
+                  // ==================== زر إنشاء حصة استثنائية ====================
+                  if (!_hasSessions && !_isExtraSession)
+                    Center(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _createExtraSession,
+                            icon: const Icon(Icons.add_circle),
+                            label: const Text('إنشاء حصة استثنائية'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'يمكنك إنشاء حصة استثنائية لهذا اليوم',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
-                      prefixIcon: const Icon(Icons.business),
-                      hintText: _halls.isEmpty ? 'لا توجد قاعات' : 'اختر قاعة',
                     ),
-                    isExpanded: true,
-                    items: _halls.map((hall) {
-                      return DropdownMenuItem(
-                        value: hall.id,
-                        child: Text(hall.name),
-                      );
-                    }).toList(),
-                    onChanged: _halls.isEmpty ? null : _onHallChanged,
-                  ),
 
                   const SizedBox(height: 16),
 
-                  // ==================== 2. اختيار الفوج ====================
-                  if (_selectedHallId != null) ...[
+                  // ==================== إذا كان هناك حصص ====================
+                  if (_hasSessions) ...[
+                    // اختيار القاعة (معطل)
+                    const Text(
+                      'القاعة',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: _selectedHallId,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.business),
+                        hintText: _isFieldsDisabled
+                            ? 'تم التحديد تلقائياً'
+                            : 'اختر قاعة',
+                      ),
+                      isExpanded: true,
+                      items: _halls.map((hall) {
+                        return DropdownMenuItem(
+                          value: hall.id,
+                          child: Text(hall.name),
+                        );
+                      }).toList(),
+                      onChanged: _isFieldsDisabled ? null : _onHallChanged,
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // اختيار الفوج (معطل)
                     const Text(
                       'الفوج',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    if (_isLoadingGroups)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      DropdownButtonFormField<int>(
-                        value: _selectedGroupId,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          prefixIcon: const Icon(Icons.group),
-                          hintText: _groups.isEmpty
-                              ? 'لا توجد أفواج'
-                              : 'اختر فوج',
+                    DropdownButtonFormField<int>(
+                      value: _selectedGroupId,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        isExpanded: true,
-                        items: _groups.map((group) {
-                          return DropdownMenuItem(
-                            value: group.id,
-                            child: Text(group.name),
-                          );
-                        }).toList(),
-                        onChanged: _groups.isEmpty ? null : _onGroupChanged,
+                        prefixIcon: const Icon(Icons.group),
+                        hintText: _isFieldsDisabled
+                            ? 'تم التحديد تلقائياً'
+                            : 'اختر فوج',
                       ),
-                  ],
-
-                  const SizedBox(height: 16),
-
-                  // ==================== 3. اختيار الحصة ====================
-                  if (_selectedGroupId != null) ...[
-                    const Text(
-                      'الحصة التدريبية',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      isExpanded: true,
+                      items: _groups.map((group) {
+                        return DropdownMenuItem(
+                          value: group.id,
+                          child: Text(group.name),
+                        );
+                      }).toList(),
+                      onChanged: _isFieldsDisabled ? null : _onGroupChanged,
                     ),
+
+                    const SizedBox(height: 12),
+
+// اختيار الحصة (معطل إذا كانت هناك حصة مسجلة)
+                    const Text('الحصة التدريبية',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    if (_isLoadingSessions)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      DropdownButtonFormField<int>(
-                        value: _selectedSessionId,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          prefixIcon: const Icon(Icons.schedule),
-                          hintText: _sessions.isEmpty
-                              ? 'لا توجد حصص'
-                              : 'اختر حصة',
-                        ),
-                        isExpanded: true,
-                        items: _sessions.map((session) {
-                          return DropdownMenuItem(
-                            value: session.id,
-                            child: Text(_getSessionTime(session)),
-                          );
-                        }).toList(),
-                        onChanged: _sessions.isEmpty ? null : _onSessionChanged,
+                    DropdownButtonFormField<int>(
+                      value: _selectedSessionId,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: const Icon(Icons.schedule),
+                        hintText:
+                            _getSessionDisplayText(), // ✅ استخدام دالة جديدة
                       ),
-                  ],
+                      isExpanded: true,
+                      items: _sessions.map((session) {
+                        return DropdownMenuItem(
+                          value: session.id,
+                          child: Text(_getSessionTime(session)),
+                        );
+                      }).toList(),
+                      onChanged: _isFieldsDisabled ? null : _onSessionChanged,
+                    ),
 
-                  const SizedBox(height: 24),
-
-                  // ==================== 4. قائمة الحضور ====================
-                  if (_selectedSessionId != null) ...[
-                    if (_isLoadingStudents)
-                      const Center(child: CircularProgressIndicator())
-                    else if (_students.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(32),
-                        alignment: Alignment.center,
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.people_outline,
-                              size: 60,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'لا يوجد طلاب في هذا الفوج',
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                          ],
-                        ),
-                      )
-                    else ...[
-                      // إحصائيات الحضور
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                    if (_isFieldsDisabled)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '🔒 تم تعطيل الحقول تلقائياً لوجود حصة مسجلة',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue.shade700,
                           ),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStatItem(
-                              'الحضور',
-                              _presentCount,
-                              Icons.check_circle,
-                              Colors.white,
-                            ),
-                            _buildStatItem(
-                              'الغياب',
-                              _absentCount,
-                              Icons.cancel,
-                              Colors.white70,
-                            ),
-                            _buildStatItem(
-                              'النسبة',
-                              '${_attendancePercentage.toStringAsFixed(0)}%',
-                              Icons.percent,
-                              Colors.white,
-                            ),
-                          ],
                         ),
                       ),
-                      // ==================== أزرار التحكم السريع ====================
-                      /*                       Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        child: Row(
+
+                    const SizedBox(height: 24),
+
+                    // ==================== قائمة الحضور ====================
+                    if (_selectedGroupId != null) ...[
+                      if (_isLoadingData)
+                        const Center(child: CircularProgressIndicator())
+                      else if (_students.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(32),
+                          alignment: Alignment.center,
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.people_outline,
+                                size: 60,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'لا يوجد طلاب في هذا الفوج',
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        )
+                      else ...[
+                        // إحصائيات الحضور
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStatItem(
+                                'الحضور',
+                                _presentCount,
+                                Icons.check_circle,
+                                Colors.white,
+                              ),
+                              _buildStatItem(
+                                'الغياب',
+                                _absentCount,
+                                Icons.cancel,
+                                Colors.white70,
+                              ),
+                              _buildStatItem(
+                                'النسبة',
+                                '${_attendancePercentage.toStringAsFixed(0)}%',
+                                Icons.percent,
+                                Colors.white,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // أزرار التحكم السريع
+                        Row(
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _markAllPresent,
+                                onPressed: () {
+                                  for (int i = 0; i < _records.length; i++) {
+                                    if (!_records[i].isPresent) {
+                                      _toggleAttendance(i, isPresent: true);
+                                    }
+                                  }
+                                },
                                 icon: const Icon(Icons.check_circle, size: 18),
                                 label: const Text('حضور الجميع'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.green,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
+                                    vertical: 10,
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -773,14 +1198,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _markAllAbsent,
+                                onPressed: () {
+                                  for (int i = 0; i < _records.length; i++) {
+                                    if (_records[i].isPresent) {
+                                      _toggleAttendance(i, isPresent: false);
+                                    }
+                                  }
+                                },
                                 icon: const Icon(Icons.cancel, size: 18),
                                 label: const Text('غياب الجميع'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.red,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
+                                    vertical: 10,
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -790,111 +1221,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             ),
                           ],
                         ),
-                      ),
- */
 
-                      // ==================== أزرار التحكم السريع والفلتر ====================
-                      Column(
-                        children: [
-                          // أزرار حضور الجميع / غياب الجميع
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: _markAllPresent,
-                                  icon: const Icon(
-                                    Icons.check_circle,
-                                    size: 18,
-                                  ),
-                                  label: const Text('حضور الجميع'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: _markAllAbsent,
-                                  icon: const Icon(Icons.cancel, size: 18),
-                                  label: const Text('غياب الجميع'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                          // أزرار الفلتر
-                          Row(
-                            children: [
-                              _buildFilterChip('الكل', 'all'),
-                              const SizedBox(width: 8),
-                              _buildFilterChip('الحاضرون', 'present'),
-                              const SizedBox(width: 8),
-                              _buildFilterChip('الغائبون', 'absent'),
-                            ],
-                          ),
-                        ],
-                      ),
-
-                      // قائمة الطلاب
-                      /*                  ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _records.length,
-                        itemBuilder: (context, index) {
-                          final record = _records[index];
-                          return _buildAttendanceCard(record, index);
-                        },
-                      ),
- */
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _filteredRecords.length,
-                        itemBuilder: (context, index) {
-                          final record = _filteredRecords[index];
-                          final originalIndex = _records.indexWhere(
-                            (r) => r.studentId == record.studentId,
-                          );
-                          return _buildAttendanceCard(record, originalIndex);
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // زر الحفظ
-                      ElevatedButton(
-                        onPressed: _saveAttendance,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFE53935),
-                          minimumSize: const Size(double.infinity, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                        // قائمة الطلاب
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _records.length,
+                          itemBuilder: (context, index) {
+                            final record = _records[index];
+                            return _buildAttendanceCard(record, index);
+                          },
                         ),
-                        child: const Text(
-                          'حفظ الحضور',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
+                      ],
                     ],
                   ],
                 ],
@@ -903,28 +1243,174 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  Widget _buildFilterChip(String label, String value) {
-    return Expanded(
-      child: FilterChip(
-        label: Text(label),
-        selected: _filterType == value,
-        onSelected: (selected) {
-          setState(() {
-            _filterType = value;
-          });
-        },
-        selectedColor: const Color(0xFFE53935).withOpacity(0.2),
-        backgroundColor: Colors.grey.shade100,
-        labelStyle: TextStyle(
-          color: _filterType == value
-              ? const Color(0xFFE53935)
-              : Colors.grey.shade700,
-          fontWeight: _filterType == value
-              ? FontWeight.bold
-              : FontWeight.normal,
+// ==================== الحصول على نص عرض الحصة ====================
+  String _getSessionDisplayText() {
+    // إذا كانت الحقول معطلة (يوجد حصة مسجلة)
+    if (_isFieldsDisabled) {
+      // إذا كانت حصة استثنائية
+      if (_isExtraSession && _extraSession != null) {
+        final session = _extraSession!;
+        final dayName = _getDayName(session.date.weekday);
+        return '$dayName ${_formatTime(session.startTime)} - ${_formatTime(session.endTime)}';
+      }
+
+      // إذا كانت حصة عادية
+      if (_selectedSessionId != null) {
+        final session = _sessions.firstWhere(
+          (s) => s.id == _selectedSessionId,
+          orElse: () => SessionModel(
+            id: 0,
+            groupId: 0,
+            dayOfWeek: 0,
+            startTime: const TimeOfDay(hour: 0, minute: 0),
+            endTime: const TimeOfDay(hour: 0, minute: 0),
+          ),
+        );
+        if (session.id != 0) {
+          return '${session.dayName} ${_formatTime(session.startTime)} - ${_formatTime(session.endTime)}';
+        }
+      }
+
+      return 'تم التحديد تلقائياً';
+    }
+
+    return 'اختر حصة';
+  }
+
+// ==================== الحصول على اسم اليوم ====================
+  String _getDayName(int weekday) {
+    const days = [
+      'الأحد',
+      'الإثنين',
+      'الثلاثاء',
+      'الأربعاء',
+      'الخميس',
+      'الجمعة',
+      'السبت'
+    ];
+    // weekday في DateTime: 1=الإثنين, 7=الأحد
+    final index = weekday == 7 ? 0 : weekday;
+    return days[index];
+  }
+
+  // ==================== بطاقة حضور الطالب ====================
+  Widget _buildAttendanceCard(AttendanceRecord record, int index) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            InkWell(
+              onTap: () =>
+                  _toggleAttendance(index, isPresent: !record.isPresent),
+              borderRadius: BorderRadius.circular(25),
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: record.isPresent
+                      ? Colors.green.shade100
+                      : Colors.red.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  record.isPresent ? Icons.check : Icons.close,
+                  color: record.isPresent ? Colors.green : Colors.red,
+                  size: 28,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${record.studentName} ${record.studentLastName}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (!record.isPresent && record.excuseReason != null)
+                    Text(
+                      'العذر: ${record.excuseReason}',
+                      style: TextStyle(fontSize: 11, color: Colors.orange[700]),
+                    ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: record.isPresent
+                    ? Colors.green.shade50
+                    : Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                record.isPresent ? 'حاضر' : 'غائب',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: record.isPresent ? Colors.green : Colors.red,
+                ),
+              ),
+            ),
+            if (!record.isPresent)
+              IconButton(
+                icon: const Icon(
+                  Icons.edit_note,
+                  color: Colors.orange,
+                  size: 20,
+                ),
+                onPressed: () => _showExcuseDialog(index),
+                tooltip: 'إضافة سبب الغياب',
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  // ==================== دوال لتغيير الحقول يدوياً (للحصة الاستثنائية) ====================
+  Future<void> _onHallChanged(int? hallId) async {
+    if (hallId == null) return;
+    setState(() {
+      _selectedHallId = hallId;
+      _selectedGroupId = null;
+      _selectedSessionId = null;
+      _groups = [];
+      _sessions = [];
+      _students = [];
+      _records = [];
+    });
+    await _loadGroups(hallId);
+  }
+
+  Future<void> _onGroupChanged(int? groupId) async {
+    if (groupId == null) return;
+    setState(() {
+      _selectedGroupId = groupId;
+      _selectedSessionId = null;
+      _sessions = [];
+      _students = [];
+      _records = [];
+    });
+    await _loadSessionsForGroup(groupId);
+  }
+
+  Future<void> _onSessionChanged(int? sessionId) async {
+    if (sessionId == null) return;
+    setState(() {
+      _selectedSessionId = sessionId;
+    });
+    if (_selectedGroupId != null) {
+      await _loadAttendance(_selectedGroupId!);
+    }
   }
 
   // ==================== عنصر الإحصائية ====================
@@ -953,94 +1439,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       ],
     );
   }
-
-  // ==================== بطاقة حضور الطالب ====================
-  Widget _buildAttendanceCard(AttendanceRecord record, int index) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            // أيقونة الحضور/الغياب
-            InkWell(
-              onTap: () => _toggleAttendance(index),
-              borderRadius: BorderRadius.circular(25),
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: record.isPresent
-                      ? Colors.green.shade100
-                      : Colors.red.shade100,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  record.isPresent ? Icons.check : Icons.close,
-                  color: record.isPresent ? Colors.green : Colors.red,
-                  size: 28,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-
-            // معلومات الطالب
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${record.studentName} ${record.studentLastName}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (!record.isPresent && record.excuseReason != null)
-                    Text(
-                      'العذر: ${record.excuseReason}',
-                      style: TextStyle(fontSize: 11, color: Colors.orange[700]),
-                    ),
-                ],
-              ),
-            ),
-
-            // زر سبب الغياب (يظهر فقط للغياب)
-            if (!record.isPresent)
-              IconButton(
-                icon: const Icon(
-                  Icons.edit_note,
-                  color: Colors.orange,
-                  size: 20,
-                ),
-                onPressed: () => _showExcuseDialog(index),
-                tooltip: 'إضافة سبب الغياب',
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-// ==================== نموذج لنتيجة البحث ====================
-class BestSessionResult {
+// ==================== نموذج مساعد ====================
+class SessionWithDetails {
   final HallModel hall;
   final GroupModel group;
   final SessionModel session;
-  final int priority; // 1: جارية, 2: قادمة, 3: منتهية
-  final int timeDiff;
-  final String status;
+  int priority = 999;
+  final bool isExtra;
+  final String? extraReason;
+  final int? extraId;
 
-  BestSessionResult({
+  SessionWithDetails({
     required this.hall,
     required this.group,
     required this.session,
-    required this.priority,
-    required this.timeDiff,
-    required this.status,
+    this.isExtra = false,
+    this.extraReason,
+    this.extraId,
   });
 }
