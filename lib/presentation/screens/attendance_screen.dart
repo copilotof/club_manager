@@ -106,6 +106,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       if (_extraSession == null) {
         await _findSessionsByDate();
       }
+      // عند وجود حصة استثنائية من البداية
+      if (_extraSession != null) {
+        String extraMessage = '📝 حصة استثنائية';
+        if (_extraSession!.reason != null &&
+            _extraSession!.reason!.isNotEmpty) {
+          extraMessage += ' - ${_extraSession!.reason}';
+        } else {
+          extraMessage += ' (${_formatDate(_selectedDate)})';
+        }
+        _message = extraMessage;
+      }
     } catch (e) {
       print('❌ خطأ في تحميل البيانات: $e');
       _message = '❌ حدث خطأ في تحميل البيانات';
@@ -144,7 +155,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         await _loadSessionsForGroup(_extraSession!.groupId);
         await _loadAttendance(_extraSession!.groupId);
 
-        _message = '📝 حصة استثنائية: ${_formatDate(_selectedDate)}';
+// عرض سبب الحصة الاستثنائية بدلاً من التاريخ
+        String extraMessage = '📝 حصة استثنائية';
+        if (_extraSession != null &&
+            _extraSession!.reason != null &&
+            _extraSession!.reason!.isNotEmpty) {
+          extraMessage += ' - ${_extraSession!.reason}';
+        } else {
+          extraMessage += ' (${_formatDate(_selectedDate)})';
+        }
+        _message = extraMessage;
         if (_extraSession!.reason != null) {
           _message += ' - السبب: ${_extraSession!.reason}';
         }
@@ -608,6 +628,69 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+// ==================== حذف الحصة الاستثنائية ====================
+  Future<void> _deleteExtraSession() async {
+    if (_extraSession == null) return;
+
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('🗑️ تأكيد الحذف'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'هل أنت متأكد من حذف الحصة الاستثنائية ليوم ${_formatDate(_selectedDate)}؟'),
+            const SizedBox(height: 8),
+            if (_extraSession!.reason != null)
+              Text(
+                'السبب: ${_extraSession!.reason}',
+                style: const TextStyle(color: Colors.grey),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final db = await getIt<AppDatabase>().database;
+        await db.delete(
+          'extra_sessions',
+          where: 'id = ?',
+          whereArgs: [_extraSession!.id],
+        );
+
+        setState(() {
+          _extraSession = null;
+          _isExtraSession = false;
+          _hasSessions = false;
+          _isFieldsDisabled = false;
+          _message = '🗑️ تم حذف الحصة الاستثنائية';
+        });
+
+        // إعادة تحميل البيانات
+        await _loadAllData();
+        CustomSnackbar.showSuccess(context, 'تم حذف الحصة الاستثنائية بنجاح');
+      } catch (e) {
+        print('❌ خطأ في حذف الحصة الاستثنائية: $e');
+        CustomSnackbar.showError(context, 'فشل حذف الحصة الاستثنائية');
+      }
+    }
+  }
+
   // ==================== تحميل الأفواج ====================
   Future<void> _loadGroups(int hallId) async {
     try {
@@ -979,7 +1062,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                   const SizedBox(height: 16),
 
-                  // ==================== زر إنشاء حصة استثنائية ====================
+                  // ==================== أزرار الحصة الاستثنائية ====================
                   if (!_hasSessions && !_isExtraSession)
                     Center(
                       child: Column(
@@ -993,18 +1076,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               backgroundColor: Colors.purple,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
+                                  horizontal: 24, vertical: 12),
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             'يمكنك إنشاء حصة استثنائية لهذا اليوم',
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+
+// ✅ زر حذف الحصة الاستثنائية (يظهر عند وجود حصة استثنائية)
+                  if (_isExtraSession && _extraSession != null)
+                    Center(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: _deleteExtraSession,
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('حذف الحصة الاستثنائية'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'حذف الحصة الاستثنائية لهذا اليوم',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
                           ),
                         ],
                       ),
