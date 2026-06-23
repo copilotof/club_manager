@@ -1,4 +1,6 @@
 // lib/presentation/screens/student_profile_screen.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -100,7 +102,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       _studentBloc.add(LoadStudentsEvent());
     }
   }
-
+/* 
   void _showQRCode() {
     if (_student == null) return;
     showDialog(
@@ -152,6 +154,78 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         ),
       ),
     );
+  }
+ */
+
+  void _showQRCode() {
+    if (_student == null) return;
+
+    // ✅ إنشاء معرف فريد للمدرسة (يمكن تخزينه في الإعدادات)
+    final String schoolId = _getSchoolId();
+
+    // ✅ إنشاء كود QR يحتوي على معلومات أكثر
+    final qrData = jsonEncode({
+      'school_id': schoolId,
+      'student_id': _student!.id,
+      'name': _student!.fullName,
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'بطاقة الطالب',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              QrImageView(
+                data: qrData, // ✅ البيانات المشفرة
+                version: QrVersions.auto,
+                size: 180,
+                backgroundColor: Colors.white,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _student!.fullName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'الرقم التعريفي: ${_student!.id}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                ),
+                child: const Text('إغلاق'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+// ==================== الحصول على معرف المدرسة ====================
+  String _getSchoolId() {
+    final prefs = SharedPreferences.getInstance();
+    // يمكن تخزين معرف المدرسة في الإعدادات
+    return 'SCHOOL_001'; // معرف افتراضي
   }
 
   // أضف هذه الدالة في _StudentProfileScreenState
@@ -219,7 +293,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               tooltip: 'تعديل',
             ),
           ],
-
           bottom: TabBar(
             controller: _tabController,
             isScrollable: true,
@@ -803,9 +876,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
     // تصفية حسب السنة
     if (_selectedYear != 0) {
-      filtered = filtered
-          .where((p) => p.paymentDate.year == _selectedYear)
-          .toList();
+      filtered =
+          filtered.where((p) => p.paymentDate.year == _selectedYear).toList();
     }
 
     // ✅ فلتر المستحقات الإضافية
@@ -841,9 +913,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       for (var entry in totals.entries) {
         final key = entry.key;
         final total = entry.value;
-        final requiredAmount = types[key] == 'monthly'
-            ? _monthlyFee
-            : _insuranceFee;
+        final requiredAmount =
+            types[key] == 'monthly' ? _monthlyFee : _insuranceFee;
 
         if (total < requiredAmount) {
           incompleteKeys.add(key);
@@ -1211,7 +1282,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                           ),
                         ),
                         barGroups: _getAttendanceStats().entries.map((entry) {
-                          final index = _getAttendanceStats().keys
+                          final index = _getAttendanceStats()
+                              .keys
                               .toList()
                               .indexOf(entry.key);
                           return BarChartGroupData(
@@ -1544,7 +1616,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             ),
           ],
         ),
-
         onTap: () => _showPaymentDetails(payment),
       ),
     );

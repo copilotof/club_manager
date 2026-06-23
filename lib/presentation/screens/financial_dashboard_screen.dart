@@ -7,6 +7,7 @@ import '../../data/models/payment_model.dart';
 import '../../data/models/student_model.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
+import 'student_profile_screen.dart';
 
 class FinancialDashboardScreen extends StatefulWidget {
   const FinancialDashboardScreen({super.key});
@@ -393,6 +394,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     );
   }
 
+/* 
   Widget _buildDebtorsList() {
     if (_debtors.isEmpty) {
       return Center(
@@ -440,6 +442,205 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
         );
       },
     );
+  }
+ */
+  Widget _buildDebtorsList() {
+    if (_debtors.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle, size: 60, color: Colors.green.shade300),
+            const SizedBox(height: 16),
+            Text(
+              'لا يوجد مدانين',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _debtors.length,
+      itemBuilder: (context, index) {
+        final item = _debtors[index];
+        final student = item['student'] as StudentModel;
+        final amount = item['amount'] as double;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.red.shade100,
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            ),
+            title: Text(
+              student.fullName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle:
+                Text('متأخرات $_selectedYear: ${amount.toStringAsFixed(0)} دج'),
+            trailing: IconButton(
+              icon: const Icon(Icons.arrow_forward_ios, color: Colors.blue),
+              onPressed: () {
+                _showDebtorDialog(student);
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDebtorDialog(StudentModel student) {
+    // ✅ حساب المبلغ الفعلي للطالب
+    final debtAmount = _calculateStudentDebt(student);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.green.shade700,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              student.fullName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'مدان بمبلغ ${debtAmount.toStringAsFixed(0)} دج',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.9),
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StudentProfileScreen(
+                            studentId: student.id!,
+                            initialTab: 1,
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.green.shade700,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'فتح',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white.withOpacity(0.3),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'تم',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _calculateStudentDebt(StudentModel student) {
+    double totalDebt = 0;
+
+    // حساب متأخرات الاشتراكات الشهرية
+    for (int month = 1; month <= DateTime.now().month; month++) {
+      // هنا يجب جلب المبلغ المدفوع من قاعدة البيانات
+      // مؤقتاً: نستخدم بيانات وهمية
+      // يمكن جلبها من PaymentRepository
+      final paid = _getMonthlyPaid(student.id!, month, _selectedYear);
+      if (paid < _monthlyFee) {
+        totalDebt += (_monthlyFee - paid);
+      }
+    }
+
+    // حساب متأخرات التأمين
+    final insurancePaid = _getInsurancePaid(student.id!, _selectedYear);
+    if (insurancePaid < _insuranceFee) {
+      totalDebt += (_insuranceFee - insurancePaid);
+    }
+
+    return totalDebt;
+  }
+
+// دوال مساعدة (مؤقتة)
+  double _getMonthlyPaid(int studentId, int month, int year) {
+    // ✅ يجب جلب البيانات من قاعدة البيانات
+    // مؤقتاً: نستخدم 0 (يعني لم يدفع)
+    return 0;
+  }
+
+  double _getInsurancePaid(int studentId, int year) {
+    // ✅ يجب جلب البيانات من قاعدة البيانات
+    // مؤقتاً: نستخدم 0 (يعني لم يدفع)
+    return 0;
   }
 
   Widget _buildGiftedList() {

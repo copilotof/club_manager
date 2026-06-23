@@ -12,8 +12,8 @@ class StudentRepository implements IStudentRepository {
   StudentRepository({
     required AppDatabase localDb,
     required SupabaseClient remoteApi,
-  }) : _localDb = localDb,
-       _remoteApi = remoteApi;
+  })  : _localDb = localDb,
+        _remoteApi = remoteApi;
 
   Future<Database> get _db async => await _localDb.database;
 

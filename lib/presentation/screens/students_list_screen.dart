@@ -1,8 +1,12 @@
 // lib/presentation/screens/students_list_screen.dart
+import 'dart:convert';
+
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/widgets/custom_snackbar.dart';
+import '../../data/repositories/student_repository.dart';
 import '../bloc/student/student_bloc.dart';
 import '../bloc/student/events/student_event.dart';
 import '../bloc/student/states/student_state.dart';
@@ -23,12 +27,14 @@ class StudentsListScreen extends StatefulWidget {
 class _StudentsListScreenState extends State<StudentsListScreen> {
   late StudentBloc _studentBloc;
   final TextEditingController _searchController = TextEditingController();
+  late StudentRepository _studentRepo;
 
   @override
   void initState() {
     super.initState();
     _studentBloc = StudentBloc(getIt());
     _studentBloc.add(LoadStudentsEvent());
+    _studentRepo = StudentRepository(localDb: getIt(), remoteApi: getIt());
   }
 
   @override
@@ -73,6 +79,13 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     );
   }
 
+// ==================== الحصول على معرف المدرسة ====================
+  String _getSchoolId() {
+    // يمكن تخزين معرف المدرسة في الإعدادات
+    // أو استخدام معرف ثابت
+    return 'SCHOOL_001'; // معرف افتراضي (يمكن تغييره من الإعدادات)
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,6 +102,7 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
             },
           ),
         */
+
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () async {
@@ -97,10 +111,40 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                 MaterialPageRoute(builder: (_) => const QRScannerScreen()),
               );
               if (result != null && mounted) {
-                final studentId = int.tryParse(result);
-                if (studentId != null) {
-                  // الانتقال مباشرة إلى ملف الطالب
-                  context.push('/student/$studentId');
+                // ✅ محاولة قراءة البيانات المشفرة
+                try {
+                  final Map<String, dynamic> data = jsonDecode(result);
+                  final String schoolId = data['school_id'];
+                  final int studentId = data['student_id'];
+
+                  // ✅ التحقق من معرف المدرسة
+                  if (schoolId == _getSchoolId()) {
+                    // ✅ جلب بيانات الطالب
+                    final student =
+                        await _studentRepo.getStudentById(studentId);
+                    if (student != null) {
+                      _showStudentQRResult(student);
+                    } else {
+                      CustomSnackbar.showError(context, 'الطالب غير موجود');
+                    }
+                  } else {
+                    CustomSnackbar.showError(
+                        context, 'هذا الكود من مدرسة أخرى');
+                  }
+                } catch (e) {
+                  // ✅ إذا كان الكود قديماً (رقم فقط)
+                  final studentId = int.tryParse(result);
+                  if (studentId != null) {
+                    final student =
+                        await _studentRepo.getStudentById(studentId);
+                    if (student != null) {
+                      _showStudentQRResult(student);
+                    } else {
+                      CustomSnackbar.showError(context, 'الطالب غير موجود');
+                    }
+                  } else {
+                    CustomSnackbar.showError(context, 'كود غير صالح');
+                  }
                 }
               }
             },
@@ -570,5 +614,106 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
     } catch (_) {
       return '- / -';
     }
+  }
+
+  void _showStudentQRResult(StudentModel student) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.green.shade700,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${student.firstName} ${student.lastName}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'العمر: ${student.age} سنة',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.9),
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // فتح ملف الطالب
+                      context.push('/student/${student.id}');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.green.shade700,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'فتح',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white.withOpacity(0.3),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'تم',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
