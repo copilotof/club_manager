@@ -480,6 +480,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
 
       // ✅ إذا كانت هناك حصة واحدة فقط
+// ✅ إذا كانت هناك حصة واحدة فقط
       if (foundSessions.length == 1) {
         final bestSession = foundSessions.first;
 
@@ -490,7 +491,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           _autoSelected = true;
           _isExtraSession = bestSession.isExtra;
           _hasSessions = true;
-          _isFieldsDisabled = true;
+          // ✅ لا نعطل الحقول بالكامل، بل نعطل فقط حقل الحصة
+          _isFieldsDisabled = false; // ✅ تغيير من true إلى false
 
           if (bestSession.isExtra) {
             _extraSession = ExtraSessionModel(
@@ -507,7 +509,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         });
 
         await _loadGroups(bestSession.hall.id!);
-        await _loadSessionsForGroup(bestSession.group.id!);
+        await _loadSessionsForGroupWithDate(
+            bestSession.group.id!, _selectedDate); // ✅ استخدام الدالة الجديدة
         await _loadAttendance(bestSession.group.id!);
 
         String statusText = '';
@@ -1310,6 +1313,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
       return 'تم التحديد تلقائياً';
     }
+
     return 'اختر حصة';
   }
 
@@ -1359,24 +1363,58 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       final sessionDayMap = {7: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6};
       final targetDay = sessionDayMap[selectedWeekday] ?? 0;
 
-      final daySessions =
+      // جلب حصص اليوم المختار
+      var daySessions =
           allSessions.where((s) => s.dayOfWeek == targetDay).toList();
+
+      // ✅ إضافة الحصص الاستثنائية إذا كانت موجودة لهذا اليوم والفوج
+      try {
+        final db = await getIt<AppDatabase>().database;
+        final dateStr =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+        final extraResult = await db.query(
+          'extra_sessions',
+          where: 'date = ? AND group_id = ?',
+          whereArgs: [dateStr, groupId],
+        );
+
+        for (var row in extraResult) {
+          final extra = ExtraSessionModel.fromMap(row);
+          final tempSession = SessionModel(
+            id: extra.id!,
+            groupId: extra.groupId,
+            dayOfWeek: targetDay,
+            startTime: extra.startTime,
+            endTime: extra.endTime,
+          );
+          daySessions.add(tempSession);
+        }
+      } catch (e) {
+        print('⚠️ خطأ في جلب الحصص الاستثنائية: $e');
+      }
 
       setState(() {
         _sessions = daySessions;
       });
 
-      // ✅ إذا كانت هناك حصة واحدة فقط، اخترها تلقائياً
+      // ✅ إذا كانت هناك حصة واحدة، اخترها تلقائياً
       if (_sessions.length == 1) {
         setState(() {
           _selectedSessionId = _sessions.first.id;
         });
         await _loadAttendance(groupId);
       } else if (_sessions.isEmpty) {
-        // ✅ لا توجد حصص في هذا اليوم
         setState(() {
           _selectedSessionId = null;
           _message = '📅 لا توجد حصص تدريبية في هذا اليوم لهذا الفوج';
+        });
+      } else {
+        // ✅ إذا كانت هناك عدة حصص، اتركها كلها في القائمة
+        setState(() {
+          _selectedSessionId = null;
+          _message =
+              '📋 هناك ${_sessions.length} حصص في هذا اليوم، اختر الحصة المناسبة';
         });
       }
     } catch (e) {
@@ -2136,7 +2174,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                         ),
 
-                        // أزرار التحكم السريع
+/*                         // أزرار التحكم السريع
                         Row(
                           children: [
                             Expanded(
@@ -2186,6 +2224,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             ),
                           ],
                         ),
+    */
                         const SizedBox(height: 12),
 
                         // قائمة الطلاب
