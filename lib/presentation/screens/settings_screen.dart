@@ -110,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       } else {
         // بيانات افتراضية
         _specialties = [
-          SpecialtyItem(
+          /*      SpecialtyItem(
             id: 1,
             name: 'واكو حلبة',
             ageCategories: [
@@ -128,7 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               AgeCategoryItem(name: 'أواسط', minAge: 17, maxAge: 18),
               AgeCategoryItem(name: 'أشبال', minAge: 13, maxAge: 15),
             ],
-          ),
+          ), */
         ];
       }
     } catch (e) {
@@ -306,8 +306,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (specialtyIndex != -1) {
       setState(() {
         _specialties[specialtyIndex].ageCategories.add(
-          AgeCategoryItem(name: name, minAge: minAge, maxAge: maxAge),
-        );
+              AgeCategoryItem(name: name, minAge: minAge, maxAge: maxAge),
+            );
         _newAgeCategoryController.clear();
         _newMinAgeController.clear();
         _newMaxAgeController.clear();
@@ -320,8 +320,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (specialtyIndex != -1) {
       setState(() {
         _specialties[specialtyIndex].ageCategories.removeWhere(
-          (c) => c.name == categoryName,
-        );
+              (c) => c.name == categoryName,
+            );
       });
     }
   }
@@ -352,7 +352,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('الإعدادات'),
-
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -412,12 +411,12 @@ class _SettingsScreenState extends State<SettingsScreen>
               _insuranceFeeController,
               Icons.security,
             ),
-            const SizedBox(height: 12),
+/*             const SizedBox(height: 12),
             _buildTextField(
               'عدد الحصص في الأسبوع',
               _sessionsPerWeekController,
               Icons.fitness_center,
-            ),
+            ), */
           ],
         ),
       ],

@@ -92,10 +92,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _audioPlayer = AudioPlayer();
   }
 
-  // ==================== تشغيل الأصوات ====================
-  void _playBeep(String type) {
+// ==================== تشغيل الأصوات ====================
+  void _playBeep(String type) async {
     try {
+      // اهتزاز للتنبيه
       HapticFeedback.mediumImpact();
+
+      // ✅ تشغيل الصوت
+      if (_audioPlayer != null) {
+        String assetPath;
+        switch (type) {
+          case 'success':
+            assetPath = 'assets/sounds/beep_success.mp3';
+            break;
+          case 'warning':
+            assetPath = 'assets/sounds/beep_warning.mp3';
+            break;
+          case 'error':
+            assetPath = 'assets/sounds/beep_error.mp3';
+            break;
+          default:
+            assetPath = 'assets/sounds/beep_success.mp3';
+        }
+        await _audioPlayer!.setAsset(assetPath);
+        await _audioPlayer!.play();
+      }
       print('🔊 تشغيل صوت: $type');
     } catch (e) {
       print('⚠️ خطأ في تشغيل الصوت: $e');
@@ -145,208 +166,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   // ==================== البحث عن الحصص حسب التاريخ ====================
-/* 
- Future<void> _findSessionsByDate() async {
-    setState(() {
-      _isLoadingData = true;
-      _message = 'جاري البحث عن حصص في هذا اليوم...';
-      _isExtraSession = false;
-      _isFieldsDisabled = false;
-      _extraSession = null;
-    });
-
-    try {
-      final selectedWeekday = _selectedDate.weekday;
-      final sessionDayMap = {7: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6};
-      final targetDay = sessionDayMap[selectedWeekday] ?? 0;
-
-      List<SessionWithDetails> foundSessions = [];
-
-      // ==================== 1. البحث عن الحصص العادية ====================
-      for (var hall in _halls) {
-        final groups = await _groupRepo.getGroupsByHall(hall.id!);
-
-        for (var group in groups) {
-          final sessions = await _groupRepo.getSessionsByGroup(group.id!);
-          final daySessions =
-              sessions.where((s) => s.dayOfWeek == targetDay).toList();
-
-          for (var session in daySessions) {
-            foundSessions.add(SessionWithDetails(
-              hall: hall,
-              group: group,
-              session: session,
-              isExtra: false,
-            ));
-          }
-        }
-      }
-
-      // ==================== 2. البحث عن الحصص الاستثنائية ====================
-      try {
-        final db = await getIt<AppDatabase>().database;
-        final dateStr =
-            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
-
-        print('🔍 البحث عن حصة استثنائية في تاريخ: $dateStr');
-
-        final extraResult = await db.query(
-          'extra_sessions',
-          where: 'date = ?',
-          whereArgs: [dateStr],
-        );
-
-        print('📊 عدد الحصص الاستثنائية: ${extraResult.length}');
-
-        for (var row in extraResult) {
-          final extra = ExtraSessionModel.fromMap(row);
-          print(
-              '📝 حصة استثنائية: hall=${extra.hallId}, group=${extra.groupId}');
-
-          final hall = _halls.firstWhere(
-            (h) => h.id == extra.hallId,
-            orElse: () => HallModel(id: extra.hallId, name: 'قاعة غير معروفة'),
-          );
-
-          final groups = await _groupRepo.getGroupsByHall(extra.hallId);
-          final group = groups.firstWhere(
-            (g) => g.id == extra.groupId,
-            orElse: () => GroupModel(
-              id: extra.groupId,
-              hallId: extra.hallId,
-              name: 'فوج غير معروف',
-            ),
-          );
-
-          final tempSession = SessionModel(
-            id: extra.id!,
-            groupId: extra.groupId,
-            dayOfWeek: targetDay,
-            startTime: extra.startTime,
-            endTime: extra.endTime,
-          );
-
-          // ✅ إضافة الحصة الاستثنائية إلى قائمة _sessions
-          _sessions.add(tempSession);
-
-          foundSessions.add(SessionWithDetails(
-            hall: hall,
-            group: group,
-            session: tempSession,
-            isExtra: true,
-            extraReason: extra.reason,
-            extraId: extra.id,
-          ));
-        }
-      } catch (e) {
-        print('⚠️ خطأ في البحث عن الحصص الاستثنائية: $e');
-      }
-
-      // ==================== 3. تحليل النتائج ====================
-      if (foundSessions.isEmpty) {
-  setState(() {
-    _hasSessions = false;
-    _message = '📅 لا توجد حصص تدريبية في يوم ${_formatDate(_selectedDate)}';
-    _records = [];
-    _students = [];
-    _selectedHallId = null;
-    _selectedGroupId = null;
-    _selectedSessionId = null; // ✅ مسح القيمة المختارة
-    _sessions = []; // ✅ مسح قائمة الحصص
-    _isLoadingData = false;
-    _isLoading = false;
-  });
-  return;
-}
-
-      // ✅ إذا كان هناك أكثر من حصة في نفس اليوم
-      if (foundSessions.length > 1) {
-        setState(() {
-          _hasSessions = true;
-          _isFieldsDisabled = false; // ✅ لا نعطل الحقول
-          _autoSelected = false;
-          _message =
-              '📋 هناك ${foundSessions.length} حصص في هذا اليوم، اختر الحصة المناسبة';
-          _selectedHallId = null;
-          _selectedGroupId = null;
-          _selectedSessionId = null;
-        });
-
-        // ✅ ملء قائمة _sessions بجميع الحصص
-        _sessions = foundSessions.map((s) => s.session).toList();
-
-        setState(() {
-          _isLoadingData = false;
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // ✅ إذا كانت هناك حصة واحدة فقط
-      if (foundSessions.length == 1) {
-        final bestSession = foundSessions.first;
-
-        setState(() {
-          _selectedHallId = bestSession.hall.id;
-          _selectedGroupId = bestSession.group.id;
-          _selectedSessionId = bestSession.session.id;
-          _autoSelected = true;
-          _isExtraSession = bestSession.isExtra;
-          _hasSessions = true;
-          _isFieldsDisabled = true;
-
-          if (bestSession.isExtra) {
-            _extraSession = ExtraSessionModel(
-              id: bestSession.extraId,
-              date: _selectedDate,
-              hallId: bestSession.hall.id!,
-              groupId: bestSession.group.id!,
-              startTime: bestSession.session.startTime,
-              endTime: bestSession.session.endTime,
-              reason: bestSession.extraReason,
-              createdAt: DateTime.now(),
-            );
-          }
-        });
-
-        await _loadGroups(bestSession.hall.id!);
-        await _loadSessionsForGroup(bestSession.group.id!);
-        await _loadAttendance(bestSession.group.id!);
-
-        String statusText = '';
-        if (bestSession.isExtra) {
-          statusText = ' 📝 حصة استثنائية';
-          if (bestSession.extraReason != null &&
-              bestSession.extraReason!.isNotEmpty) {
-            statusText += ' - ${bestSession.extraReason}';
-          }
-        } else {
-          final now = DateTime.now();
-          if (_selectedDate.year == now.year &&
-              _selectedDate.month == now.month &&
-              _selectedDate.day == now.day) {
-            statusText += ' ✓ الحصة الحالية';
-          }
-        }
-
-        setState(() {
-          _message =
-              '✅ ${bestSession.hall.name} → ${bestSession.group.name} → ${bestSession.session.dayName} ${_formatTime(bestSession.session.startTime)} - ${_formatTime(bestSession.session.endTime)}$statusText';
-          _isLoadingData = false;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('❌ خطأ في البحث عن الحصص: $e');
-      setState(() {
-        _message = '❌ حدث خطأ في البحث عن الحصص';
-        _isLoadingData = false;
-        _isLoading = false;
-      });
-    }
-  }
- */
-
   Future<void> _findSessionsByDate() async {
     setState(() {
       _isLoadingData = true;

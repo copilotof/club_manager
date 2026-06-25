@@ -27,15 +27,16 @@ class DashboardScreen extends StatelessWidget {
             },
             tooltip: 'الإعدادات',
           ),
+/*      
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () {
               context.push('/qr_scanner');
             },
           ),
+   */
           IconButton(
             icon: const Icon(Icons.print),
-
             onPressed: () {
               Navigator.push(
                 context,

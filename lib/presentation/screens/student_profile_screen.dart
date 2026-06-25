@@ -1437,88 +1437,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       setState(() {
         _paymentsRefresh = !_paymentsRefresh;
       });
+      // ✅ إرجاع true لتحديث لوحة المعلومات المالية
+      Navigator.pop(context, true);
     }
   }
-  /*
-  Widget _buildPaymentCard(PaymentModel payment) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: _getPaymentColor(
-            payment.paymentType,
-          ).withOpacity(0.1),
-          child: Icon(
-            _getPaymentIcon(payment.paymentType),
-            color: _getPaymentColor(payment.paymentType),
-            size: 20,
-          ),
-        ),
-        title: Text(
-          _formatPaymentName(payment),
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-        subtitle: Text(
-          _formatDate(payment.paymentDate),
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${payment.amount.toStringAsFixed(0)} دج',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: payment.isGifted
-                        ? Colors.green
-                        : const Color(0xFFE53935),
-                  ),
-                ),
-                const SizedBox(height: 4), // مسافة صغيرة لتنظيم المظهر
-                // ✅ الـ Container الديناميكي المضاف لحالة الدفع
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getPaymentStatusColor(payment).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _getPaymentStatusText(payment),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: _getPaymentStatusColor(payment),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            IconButton(
-              icon: const Icon(
-                Icons.delete_outline,
-                color: Colors.red,
-                size: 20,
-              ),
-              onPressed: () => _deletePayment(payment.id!),
-            ),
-          ],
-        ),
-
-        onTap: () => _showPaymentDetails(payment),
-      ),
-    );
-  }
-*/
 
   Widget _buildPaymentCard(PaymentModel payment) {
     return Card(

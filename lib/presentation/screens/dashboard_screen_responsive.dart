@@ -13,7 +13,7 @@ class DashboardScreenResponsive extends StatelessWidget {
             ? const Text('الرئيسية')
             : const Text('لوحة التحكم - Fight Club Manager'),
         actions: [
-          IconButton(icon: const Icon(Icons.qr_code_scanner), onPressed: () {}),
+          // IconButton(icon: const Icon(Icons.qr_code_scanner), onPressed: () {}),
         ],
       ),
       body: ResponsiveLayout(

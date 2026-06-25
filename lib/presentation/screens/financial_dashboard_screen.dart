@@ -66,17 +66,20 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     });
 
     try {
+      // ✅ إعادة تحميل الطلاب والدفعات
       _students = await _studentRepo.getAllStudents();
       _payments = await _paymentRepo.getAllPayments();
+
+      // ✅ إعادة حساب المدانين والمهدى إليهم
       await _calculateDebtors();
       await _calculateGiftedStudents();
     } catch (e) {
-      print('خطأ في تحميل البيانات: $e');
+      print('❌ خطأ في تحميل البيانات: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-
-    setState(() {
-      _isLoading = false;
-    });
   }
 
   // حساب المتأخرات (السنة الحالية من الشهر 1 إلى الشهر الحالي)
@@ -394,56 +397,6 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     );
   }
 
-/* 
-  Widget _buildDebtorsList() {
-    if (_debtors.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.check_circle, size: 60, color: Colors.green.shade300),
-            const SizedBox(height: 16),
-            Text('لا يوجد مدانين', style: TextStyle(color: Colors.grey[600])),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: _debtors.length,
-      itemBuilder: (context, index) {
-        final item = _debtors[index];
-        final student = item['student'] as StudentModel;
-        final amount = item['amount'] as double;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.red.shade100,
-              child: Text(
-                '${index + 1}',
-                style: TextStyle(color: Colors.red.shade700),
-              ),
-            ),
-            title: Text(
-              student.fullName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text('متأخرات $_selectedYear'),
-            trailing: Text(
-              '${amount.toStringAsFixed(0)} دج',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.red.shade700,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
- */
   Widget _buildDebtorsList() {
     if (_debtors.isEmpty) {
       return Center(
@@ -486,9 +439,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
                 Text('متأخرات $_selectedYear: ${amount.toStringAsFixed(0)} دج'),
             trailing: IconButton(
               icon: const Icon(Icons.arrow_forward_ios, color: Colors.blue),
-              onPressed: () {
-                _showDebtorDialog(student);
-              },
+              onPressed: () => _showDebtorDialog(student),
             ),
           ),
         );
@@ -496,9 +447,9 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     );
   }
 
-  void _showDebtorDialog(StudentModel student) {
+  Future<void> _showDebtorDialog(StudentModel student) async {
     // ✅ حساب المبلغ الفعلي للطالب
-    final debtAmount = _calculateStudentDebt(student);
+    final debtAmount = await _calculateStudentDebt(student);
 
     showDialog(
       context: context,
@@ -547,9 +498,10 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.pop(context);
-                      Navigator.push(
+                      // ✅ فتح ملف الطالب في تبويب المدفوعات
+                      final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => StudentProfileScreen(
@@ -558,6 +510,10 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
                           ),
                         ),
                       );
+                      // ✅ بعد العودة، تحديث البيانات
+                      if (result == true) {
+                        await _loadData();
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -607,24 +563,36 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     );
   }
 
-  double _calculateStudentDebt(StudentModel student) {
+  Future<double> _calculateStudentDebt(StudentModel student) async {
     double totalDebt = 0;
 
-    // حساب متأخرات الاشتراكات الشهرية
-    for (int month = 1; month <= DateTime.now().month; month++) {
-      // هنا يجب جلب المبلغ المدفوع من قاعدة البيانات
-      // مؤقتاً: نستخدم بيانات وهمية
-      // يمكن جلبها من PaymentRepository
-      final paid = _getMonthlyPaid(student.id!, month, _selectedYear);
-      if (paid < _monthlyFee) {
-        totalDebt += (_monthlyFee - paid);
-      }
-    }
+    try {
+      final paymentRepo = PaymentRepository(localDb: getIt());
 
-    // حساب متأخرات التأمين
-    final insurancePaid = _getInsurancePaid(student.id!, _selectedYear);
-    if (insurancePaid < _insuranceFee) {
-      totalDebt += (_insuranceFee - insurancePaid);
+      // ✅ حساب متأخرات الاشتراكات الشهرية
+      for (int month = 1; month <= DateTime.now().month; month++) {
+        final paid = await paymentRepo.getTotalPaidForTarget(
+          studentId: student.id!,
+          paymentType: 'monthly',
+          targetMonth: month,
+          targetYear: _selectedYear,
+        );
+        if (paid < _monthlyFee) {
+          totalDebt += (_monthlyFee - paid);
+        }
+      }
+
+      // ✅ حساب متأخرات التأمين
+      final insurancePaid = await paymentRepo.getTotalPaidForTarget(
+        studentId: student.id!,
+        paymentType: 'insurance',
+        targetYear: _selectedYear,
+      );
+      if (insurancePaid < _insuranceFee) {
+        totalDebt += (_insuranceFee - insurancePaid);
+      }
+    } catch (e) {
+      print('❌ خطأ في حساب المبلغ المدان: $e');
     }
 
     return totalDebt;

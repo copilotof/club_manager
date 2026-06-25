@@ -94,21 +94,20 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
             ? const Text('الطلبة')
             : const Text('قائمة الطلبة'),
         actions: [
-          /* 
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () {
-              context.push('/qr_scanner');
-            },
-          ),
-        */
-
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () async {
               final result = await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+                MaterialPageRoute(
+                  builder: (_) => QRScannerScreen(
+                    key: _qrScannerKey, // ✅ تمرير الـ key
+                    onScan: (ScanResult scanResult) {
+                      // ✅ معالجة النتيجة فوراً
+                      _handleQRScan(scanResult);
+                    },
+                  ),
+                ),
               );
               if (result != null && mounted) {
                 // ✅ محاولة قراءة البيانات المشفرة
@@ -311,6 +310,62 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  void _handleQRScan(ScanResult scanResult) async {
+    try {
+      // محاولة قراءة البيانات المشفرة
+      final Map<String, dynamic> data = jsonDecode(scanResult.studentId);
+      final String schoolId = data['school_id'];
+      final int studentId = data['student_id'];
+
+      if (schoolId == _getSchoolId()) {
+        final student = await _studentRepo.getStudentById(studentId);
+        if (student != null) {
+          _showStudentQRResult(student);
+        } else {
+// ✅ عرض رسالة خطأ وإعادة تفعيل المسح
+          CustomSnackbar.showError(context, 'الطالب غير موجود');
+          _resumeScanner();
+        }
+      } else {
+        CustomSnackbar.showError(context, 'هذا الكود من مدرسة أخرى');
+        _resumeScanner();
+      }
+    } catch (e) {
+      // إذا كان الكود قديماً (رقم فقط)
+      final studentId = int.tryParse(scanResult.studentId);
+      if (studentId != null) {
+        final student = await _studentRepo.getStudentById(studentId);
+        if (student != null) {
+          _showStudentQRResult(student);
+        } else {
+          CustomSnackbar.showError(context, 'الطالب غير موجود');
+          _resumeScanner();
+        }
+      } else {
+        CustomSnackbar.showError(context, 'كود غير صالح');
+        _resumeScanner();
+      }
+    }
+  }
+
+// ✅ مفتاح للوصول إلى QRScannerScreen
+  final GlobalKey<QRScannerScreenState> _qrScannerKey =
+      GlobalKey<QRScannerScreenState>();
+
+// ==================== إعادة تفعيل الماسح ====================
+  void _resumeScanner() {
+    // QRScannerScreenState.resumeScanningStatic();
+
+    print('🔄 محاولة إعادة تفعيل الماسح');
+
+    // ✅ الطريقة الأولى: باستخدام الـ GlobalKey
+    if (_qrScannerKey.currentState != null) {
+      _qrScannerKey.currentState!.resumeScanning();
+      print('✅ تم إعادة تفعيل الماسح عبر الـ key');
+      return;
+    }
   }
 
   // ✅ تم تمرير الـ index من الـ Builder إلى الدالة بالأسفل
@@ -664,10 +719,18 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // ✅ إغلاق النافذة أولاً
                       Navigator.pop(context);
-                      // فتح ملف الطالب
-                      context.push('/student/${student.id}');
+
+                      // ✅ الانتظار قليلاً ثم فتح ملف الطالب
+                      await Future.delayed(const Duration(milliseconds: 100));
+
+                      // ✅ فتح ملف الطالب
+                      await context.push('/student/${student.id}');
+
+                      // ✅ بعد العودة من ملف الطالب، إعادة تفعيل المسح
+                      _resumeScanner();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -691,6 +754,8 @@ class _StudentsListScreenState extends State<StudentsListScreen> {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
+                      // ✅ إعادة تفعيل المسح بعد إغلاق النافذة
+                      _resumeScanner();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white.withOpacity(0.3),

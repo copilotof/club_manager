@@ -1,5 +1,6 @@
 // lib/presentation/screens/qr_scanner_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -49,6 +50,9 @@ class QRScannerScreenState extends State<QRScannerScreen> {
   String? _lastScannedCode;
   DateTime? _lastScanTime;
 
+// ✅ دالة عامة للوصول إلى الماسح
+  static QRScannerScreenState? _instance;
+
   // ⏳ زيادة وقت الكوول داون (المهلة) لمنع التكرار الفوري لنفس الكود إلى 2.5 ثانية
   static const Duration _scanCooldown = Duration(milliseconds: 2500);
 
@@ -58,6 +62,8 @@ class QRScannerScreenState extends State<QRScannerScreen> {
   @override
   void initState() {
     super.initState();
+    _instance = this;
+
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.normal, // سرعة عادية ومستقرة
       formats: [BarcodeFormat.qrCode],
@@ -553,9 +559,40 @@ class QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
+  // ==================== تشغيل الأصوات ====================
+  void _playBeep(String type) {
+    try {
+      // ✅ اهتزاز للتنبيه (يعمل على جميع الأجهزة)
+      switch (type) {
+        case 'success':
+          HapticFeedback.mediumImpact();
+          break;
+        case 'warning':
+          HapticFeedback.lightImpact();
+          break;
+        case 'error':
+          HapticFeedback.heavyImpact();
+          break;
+        default:
+          HapticFeedback.lightImpact();
+      }
+      print('🔊 تشغيل صوت: $type');
+    } catch (e) {
+      print('⚠️ خطأ في تشغيل الصوت: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _instance = null;
     _controller.dispose();
     super.dispose();
+  }
+
+  // ✅ دالة ثابتة لإعادة تفعيل المسح
+  static void resumeScanningStatic() {
+    if (_instance != null) {
+      _instance!.resumeScanning();
+    }
   }
 }

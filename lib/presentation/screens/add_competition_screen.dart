@@ -63,6 +63,7 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
       } else {
         // بيانات افتراضية إذا لم توجد
         _specialties = [
+          /* 
           SpecialtyItem(
             id: 1,
             name: 'واكو حلبة',
@@ -81,7 +82,7 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
               AgeCategoryItem(name: 'أواسط', minAge: 17, maxAge: 18),
               AgeCategoryItem(name: 'أشبال', minAge: 13, maxAge: 15),
             ],
-          ),
+          ), */
         ];
       }
     } catch (e) {
@@ -553,7 +554,8 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
                           onSelected: (selected) {
                             setState(() {
                               // ✅ تأكد من وجود القائمة قبل الإضافة
-                              if (_selectedAgeCategoriesBySpecialty[specialtyId] ==
+                              if (_selectedAgeCategoriesBySpecialty[
+                                      specialtyId] ==
                                   null) {
                                 _selectedAgeCategoriesBySpecialty[specialtyId] =
                                     [];
