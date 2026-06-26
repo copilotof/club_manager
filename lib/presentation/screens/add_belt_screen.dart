@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import '../../data/models/belt_model.dart';
 import '../../data/repositories/belt_repository.dart';
+import '../../data/repositories/student_repository.dart';
+import '../../core/services/notification_service.dart';
 import '../../injection/dependency_injection.dart';
 import '../../core/widgets/custom_snackbar.dart';
 
@@ -54,6 +56,17 @@ class _AddBeltScreenState extends State<AddBeltScreen> {
     }
   }
 
+  // ==================== جلب اسم الطالب ====================
+  Future<String> _getStudentName(int studentId) async {
+    try {
+      final repo = StudentRepository(localDb: getIt(), remoteApi: getIt());
+      final student = await repo.getStudentById(studentId);
+      return student?.fullName ?? 'طالب غير معروف';
+    } catch (e) {
+      return 'طالب غير معروف';
+    }
+  }
+
   Future<void> _saveBelt() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -77,6 +90,21 @@ class _AddBeltScreenState extends State<AddBeltScreen> {
 
         final repo = BeltRepository(localDb: getIt());
         await repo.addBelt(beltModel);
+
+/*         // ✅ إنشاء إشعار ترقية حزام بعد الحفظ بنجاح
+        try {
+          final notificationService = NotificationService();
+          final studentName = await _getStudentName(widget.studentId);
+          await notificationService.createBeltNotification(
+            studentId: widget.studentId,
+            title: '🥋 ترقية حزام للطالب $studentName',
+            message: 'تم ترقية الطالب $studentName إلى حزام $_selectedBelt',
+            relatedId: beltModel.id,
+          );
+          print('✅ تم إنشاء إشعار ترقية الحزام');
+        } catch (e) {
+          print('⚠️ خطأ في إنشاء إشعار الترقية: $e');
+        } */
 
         if (!mounted) return;
         CustomSnackbar.showSuccess(context, 'تم تسجيل ترقية الحزام بنجاح');

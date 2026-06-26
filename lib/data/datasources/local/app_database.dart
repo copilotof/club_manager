@@ -19,7 +19,7 @@ class AppDatabase {
 
     final db = await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -37,12 +37,31 @@ class AppDatabase {
         reason TEXT,
         created_at TEXT NOT NULL,
         UNIQUE(date, hall_id, group_id)
+        
       )
     ''');
       print('✅ تم إنشاء جدول extra_sessions (في _initDB)');
     } catch (e) {
       print('⚠️ خطأ في إنشاء جدول extra_sessions: $e');
     }
+
+    // في دالة _createTables، أضف:
+    await db.execute('''
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    student_id INTEGER,
+    related_id INTEGER,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    target_audience TEXT,
+    priority INTEGER DEFAULT 0,
+    action_url TEXT,
+    FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+  )
+''');
 
     return db;
   }
@@ -383,6 +402,30 @@ class AppDatabase {
         print('✅ تم إنشاء جدول extra_sessions');
       } catch (e) {
         print('⚠️ خطأ في إنشاء جدول extra_sessions: $e');
+      }
+    }
+
+    if (oldVersion < 7) {
+      try {
+        await db.execute('''
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        student_id INTEGER,
+        related_id INTEGER,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        target_audience TEXT,
+        priority INTEGER DEFAULT 0,
+        action_url TEXT,
+        FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+      )
+    ''');
+        print('✅ تم إنشاء جدول notifications');
+      } catch (e) {
+        print('⚠️ خطأ في إنشاء جدول notifications: $e');
       }
     }
   }

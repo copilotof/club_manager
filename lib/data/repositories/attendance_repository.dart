@@ -15,9 +15,9 @@ class AttendanceRepository implements IAttendanceRepository {
     required AppDatabase localDb,
     required SupabaseClient remoteApi,
     required Connectivity connectivity,
-  }) : _localDb = localDb,
-       _remoteApi = remoteApi,
-       _connectivity = connectivity;
+  })  : _localDb = localDb,
+        _remoteApi = remoteApi,
+        _connectivity = connectivity;
 
   Future<Database> get _db async => await _localDb.database;
 
@@ -172,5 +172,21 @@ class AttendanceRepository implements IAttendanceRepository {
     } catch (e) {
       return null;
     }
+  }
+
+  /// جلب سجل حضور طالب معين (آخر n حصص)
+  Future<List<AttendanceRecord>> getStudentAttendance({
+    required int studentId,
+    int limit = 5,
+  }) async {
+    final db = await _db;
+    final result = await db.query(
+      'attendances',
+      where: 'student_id = ?',
+      whereArgs: [studentId],
+      orderBy: 'session_date DESC',
+      limit: limit,
+    );
+    return result.map((map) => AttendanceRecord.fromMap(map)).toList();
   }
 }

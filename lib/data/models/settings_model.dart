@@ -6,14 +6,24 @@ class SettingsModel {
   List<SportsItem> sportsItems; // قائمة الأدوات الرياضية
   List<DiscountPackage> discountPackages; // تخفيضات الدفع المسبق
 
+// ✅ إعدادات التنبيهات
+  int recurrentAbsenceThreshold; // عدد الغيابات المتتالية للتنبيه (افتراضي: 3)
+  int competitionReminderDays; // عدد الأيام قبل البطولة للتنبيه (افتراضي: 7)
+  int beltPromotionMonths; // عدد أشهر الترقية (افتراضي: 3)
+  int paymentDelayMonths; // عدد أشهر التأخر في الدفع للتنبيه (افتراضي: 2)
+
   SettingsModel({
     this.monthlyFee = 2000,
     this.insuranceFee = 1000,
     this.sessionsPerWeek = 3,
     List<SportsItem>? sportsItems,
     List<DiscountPackage>? discountPackages,
-  }) : sportsItems = sportsItems ?? [],
-       discountPackages = discountPackages ?? [];
+    this.recurrentAbsenceThreshold = 3,
+    this.competitionReminderDays = 7,
+    this.beltPromotionMonths = 3,
+    this.paymentDelayMonths = 2,
+  })  : sportsItems = sportsItems ?? [],
+        discountPackages = discountPackages ?? [];
 
   Map<String, dynamic> toMap() {
     return {
@@ -22,6 +32,10 @@ class SettingsModel {
       'sessions_per_week': sessionsPerWeek,
       'sports_items': sportsItems.map((e) => e.toMap()).toList(),
       'discount_packages': discountPackages.map((e) => e.toMap()).toList(),
+      'recurrent_absence_threshold': recurrentAbsenceThreshold,
+      'competition_reminder_days': competitionReminderDays,
+      'belt_promotion_months': beltPromotionMonths,
+      'payment_delay_months': paymentDelayMonths,
     };
   }
 
@@ -30,16 +44,18 @@ class SettingsModel {
       monthlyFee: map['monthly_fee']?.toDouble() ?? 2000,
       insuranceFee: map['insurance_fee']?.toDouble() ?? 1000,
       sessionsPerWeek: map['sessions_per_week'] ?? 3,
-      sportsItems:
-          (map['sports_items'] as List?)
+      sportsItems: (map['sports_items'] as List?)
               ?.map((e) => SportsItem.fromMap(e))
               .toList() ??
           [],
-      discountPackages:
-          (map['discount_packages'] as List?)
+      discountPackages: (map['discount_packages'] as List?)
               ?.map((e) => DiscountPackage.fromMap(e))
               .toList() ??
           [],
+      recurrentAbsenceThreshold: map['recurrent_absence_threshold'] ?? 3,
+      competitionReminderDays: map['competition_reminder_days'] ?? 7,
+      beltPromotionMonths: map['belt_promotion_months'] ?? 3,
+      paymentDelayMonths: map['payment_delay_months'] ?? 2,
     );
   }
 }

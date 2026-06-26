@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/notification_service.dart';
 import '../../data/models/payment_model.dart';
 import '../../data/repositories/payment_repository.dart';
+import '../../data/repositories/student_repository.dart';
 import '../../injection/dependency_injection.dart';
 import '../../core/widgets/custom_snackbar.dart';
 
@@ -370,7 +372,90 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
   }
 
   // ==================== حفظ دفعة ====================
+// ==================== حفظ دفعة ====================
   Future<void> _savePayment() async {
+    if (_isCurrentTypeComplete && _paymentType != 'extra') {
+      CustomSnackbar.showWarning(context, '✓ هذا الشهر مكتمل بالفعل');
+      return;
+    }
+
+    final amount = double.tryParse(_amountController.text) ?? 0;
+    if (amount <= 0 && _paymentType != 'extra') {
+      CustomSnackbar.showWarning(context, 'الرجاء إدخال مبلغ أكبر من 0');
+      return;
+    }
+
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isSaving = true);
+
+      try {
+        String? extraReason;
+        if (_paymentType == 'extra') {
+          if (_selectedSportsItem != null) {
+            extraReason = _selectedSportsItem!.name;
+          } else {
+            extraReason = 'مستحقات إضافية';
+          }
+        }
+
+        final payment = PaymentModel(
+          studentId: widget.studentId,
+          amount: amount,
+          paymentDate: _selectedDate,
+          paymentType: _paymentType,
+          month: _paymentType == 'monthly' ? _selectedMonth : null,
+          year: _paymentType == 'monthly' ? _selectedYear : _selectedYear,
+          isExtra: _paymentType == 'extra',
+          extraReason: extraReason,
+          isGifted: _isGifted,
+          notes: _notesController.text.isEmpty ? null : _notesController.text,
+          targetMonth: _paymentType == 'monthly' ? _selectedMonth : null,
+          targetYear: _selectedYear,
+        );
+
+        final repo = PaymentRepository(localDb: getIt());
+        await repo.addPayment(payment);
+        await _loadStudentData();
+
+/*         // ✅ إنشاء إشعار بعد حفظ الدفعة بنجاح
+        try {
+          final notificationService = NotificationService();
+          // جلب اسم الطالب
+          final studentName = await _getStudentName(widget.studentId);
+          await notificationService.createPaymentNotification(
+            studentId: widget.studentId,
+            title: 'تسجيل دفعة جديدة',
+            message:
+                'تم تسجيل دفعة بقيمة ${amount.toStringAsFixed(0)} دج للطالب $studentName',
+            relatedId: payment.id,
+          );
+        } catch (e) {
+          print('⚠️ خطأ في إنشاء الإشعار: $e');
+        } */
+
+        if (!mounted) return;
+        CustomSnackbar.showSuccess(context, 'تم تسجيل الدفعة بنجاح');
+        widget.onPaymentAdded();
+        Navigator.pop(context, true);
+      } catch (e) {
+        CustomSnackbar.showError(context, 'فشل حفظ الدفعة');
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
+      }
+    }
+  }
+
+// ==================== جلب اسم الطالب ====================
+  Future<String> _getStudentName(int studentId) async {
+    try {
+      final repo = StudentRepository(localDb: getIt(), remoteApi: getIt());
+      final student = await repo.getStudentById(studentId);
+      return student?.fullName ?? 'طالب غير معروف';
+    } catch (e) {
+      return 'طالب غير معروف';
+    }
+  }
+/*   Future<void> _savePayment() async {
     if (_isCurrentTypeComplete && _paymentType != 'extra') {
       CustomSnackbar.showWarning(context, '✓ هذا الشهر مكتمل بالفعل');
       return;
@@ -423,8 +508,10 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
       } finally {
         if (mounted) setState(() => _isSaving = false);
       }
+    
     }
-  }
+    
+  } */
 
   // ==================== اختيار التاريخ ====================
   Future<void> _selectDate() async {
@@ -731,7 +818,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                           int month = index + 1;
                           bool isCompleted =
                               _completedMonthsByYear[_selectedYear]?[month] ==
-                              true;
+                                  true;
                           return DropdownMenuItem(
                             value: month,
                             child: Row(
@@ -817,9 +904,8 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
             // 12. زر الحفظ
             ElevatedButton(
-              onPressed: (_isSaving || _isCurrentTypeComplete)
-                  ? null
-                  : _savePayment,
+              onPressed:
+                  (_isSaving || _isCurrentTypeComplete) ? null : _savePayment,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE53935),
                 minimumSize: const Size(double.infinity, 50),

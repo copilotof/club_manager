@@ -53,10 +53,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   List<SessionModel> _sessions = []; // قائمة الحصص للفوج المختار
   int? _selectedGroupId; // الفوج المختار حالياً
 
+// متغيرات إعدادات التنبيهات
+  final _recurrentAbsenceController = TextEditingController();
+  final _competitionReminderController = TextEditingController();
+  final _beltPromotionController = TextEditingController();
+  final _paymentDelayController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _loadSettings();
     _loadHalls(); // ✅ تحميل القاعات عند بدء الشاشة
   }
@@ -102,6 +108,16 @@ class _SettingsScreenState extends State<SettingsScreen>
         }).toList();
       }
 
+      // ✅ إعدادات التنبيهات
+      _recurrentAbsenceController.text =
+          prefs.getInt('recurrent_absence_threshold')?.toString() ?? '3';
+      _competitionReminderController.text =
+          prefs.getInt('competition_reminder_days')?.toString() ?? '7';
+      _beltPromotionController.text =
+          prefs.getInt('belt_promotion_months')?.toString() ?? '3';
+      _paymentDelayController.text =
+          prefs.getInt('payment_delay_months')?.toString() ?? '2';
+
       // الاختصاصات الرياضية
       final specialtiesJson = prefs.getString('sports_specialties');
       if (specialtiesJson != null && specialtiesJson.isNotEmpty) {
@@ -143,7 +159,13 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _saveSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
+      // حفظ القيم الأساسية
+      await prefs.setDouble(
+          'monthly_fee', double.parse(_monthlyFeeController.text));
+      await prefs.setDouble(
+          'insurance_fee', double.parse(_insuranceFeeController.text));
+      await prefs.setInt(
+          'sessions_per_week', int.parse(_sessionsPerWeekController.text));
       // حفظ القيم الأساسية
       await prefs.setDouble(
         'monthly_fee',
@@ -360,6 +382,9 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: '🏷️ تخفيضات', icon: Icon(Icons.local_offer)),
             Tab(text: '🥋 رياضة', icon: Icon(Icons.sports_martial_arts)),
             Tab(text: '🏢 تنظيمي', icon: Icon(Icons.business)), // ✅ تبويب جديد
+            Tab(
+                text: '🔔 تنبيهات',
+                icon: Icon(Icons.notifications_active)), // ✅ جديد
           ],
         ),
         actions: [
@@ -386,6 +411,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           _buildSportsSettingsTab(),
 
           _buildOrganizationalTab(), // ✅ تبويب القاعات والأفواج
+
+          _buildNotificationsTab(), // ✅ إضافة التبويب الجديد
         ],
       ),
     );
@@ -578,17 +605,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  // ==================== تبويب الإعدادات الرياضية (للبطولات) ====================
+// ==================== تبويب الإعدادات الرياضية (للبطولات) ====================
   Widget _buildSportsSettingsTab() {
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard(
-          title: 'الاختصاصات والفئات العمرية',
-          icon: Icons.sports_martial_arts,
-          children: [
-            ..._specialties.map(
-              (specialty) => Card(
+      child: _buildSectionCard(
+        title: 'الاختصاصات والفئات',
+        icon: Icons.sports_martial_arts,
+        children: [
+          ..._specialties.map((specialty) => Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ExpansionTile(
                   title: Text(
@@ -605,82 +630,90 @@ class _SettingsScreenState extends State<SettingsScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'الفئات العمرية',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          const Text('الفئات العمرية',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          ...specialty.ageCategories.map(
-                            (category) => Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                title: Text(category.name),
-                                subtitle: Text(
-                                  '${category.minAge} - ${category.maxAge} سنة',
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, size: 20),
-                                  onPressed: () => _removeAgeCategory(
-                                    specialty.id,
-                                    category.name,
+                          ...specialty.ageCategories.map((category) => Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  title: Text(category.name),
+                                  subtitle: Text(
+                                      '${category.minAge} - ${category.maxAge} سنة'),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        size: 20, color: Colors.red),
+                                    onPressed: () => _removeAgeCategory(
+                                        specialty.id, category.name),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
+                              )),
                           if (specialty.ageCategories.isEmpty)
                             const Padding(
                               padding: EdgeInsets.all(8),
-                              child: Text(
-                                'لا توجد فئات عمرية',
-                                style: TextStyle(color: Colors.grey),
-                              ),
+                              child: Text('لا توجد فئات عمرية',
+                                  style: TextStyle(color: Colors.grey)),
                             ),
                           const SizedBox(height: 8),
-                          Row(
+                          // ✅ Row معدلة لمنع التجاوز
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.center,
                             children: [
-                              Expanded(
-                                flex: 2,
+                              // حقل اسم الفئة
+                              SizedBox(
+                                width: 120,
                                 child: TextField(
                                   controller: _newAgeCategoryController,
                                   decoration: const InputDecoration(
                                     hintText: 'اسم الفئة',
                                     border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    isDense: true,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              // حقل العمر من
                               SizedBox(
-                                width: 60,
+                                width: 50,
                                 child: TextField(
                                   controller: _newMinAgeController,
                                   decoration: const InputDecoration(
                                     hintText: 'من',
                                     border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    isDense: true,
                                   ),
                                   keyboardType: TextInputType.number,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              const Text('إلى'),
-                              const SizedBox(width: 4),
+                              const Text('إلى', style: TextStyle(fontSize: 12)),
+                              // حقل العمر إلى
                               SizedBox(
-                                width: 60,
+                                width: 50,
                                 child: TextField(
                                   controller: _newMaxAgeController,
                                   decoration: const InputDecoration(
                                     hintText: 'إلى',
                                     border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    isDense: true,
                                   ),
                                   keyboardType: TextInputType.number,
                                 ),
                               ),
+                              // زر الإضافة
                               IconButton(
                                 onPressed: () => _addAgeCategory(specialty.id),
-                                icon: const Icon(
-                                  Icons.add_circle,
-                                  color: Colors.green,
-                                ),
+                                icon: const Icon(Icons.add_circle,
+                                    color: Colors.green),
+                                constraints: const BoxConstraints(
+                                    minWidth: 32, minHeight: 32),
+                                padding: EdgeInsets.zero,
+                                iconSize: 28,
                               ),
                             ],
                           ),
@@ -689,34 +722,145 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                   ],
                 ),
+              )),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _newSpecialtyController,
+                  decoration: const InputDecoration(
+                    hintText: 'اختصاص جديد (مثال: واكو حلبة)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
               ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _addSpecialty,
+                icon: const Icon(Icons.add_circle,
+                    color: Color(0xFFE53935), size: 32),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+// ==================== تبويب إعدادات التنبيهات ====================
+  Widget _buildNotificationsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'إعدادات التنبيهات',
+          icon: Icons.notifications_active,
+          children: [
+            // 1. تنبيه الغياب المتكرر
+            _buildNotificationSetting(
+              title: 'تنبيه الغياب المتكرر',
+              description: 'عدد الغيابات المتتالية التي تستدعي التنبيه',
+              controller: _recurrentAbsenceController,
+              hint: '3',
+              icon: Icons.warning_amber,
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _newSpecialtyController,
-                    decoration: const InputDecoration(
-                      hintText: 'اختصاص جديد (مثال: واكو حلبة)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _addSpecialty,
-                  icon: const Icon(
-                    Icons.add_circle,
-                    color: Color(0xFFE53935),
-                    size: 32,
-                  ),
-                ),
-              ],
+            const Divider(),
+
+            // 2. تنبيه البطولات القادمة
+            _buildNotificationSetting(
+              title: 'تنبيه البطولات القادمة',
+              description: 'عدد الأيام قبل البطولة لإرسال التنبيه',
+              controller: _competitionReminderController,
+              hint: '7',
+              icon: Icons.emoji_events,
+            ),
+            const Divider(),
+
+            // 3. تنبيه ترقية الحزام
+            _buildNotificationSetting(
+              title: 'تنبيه ترقية الحزام',
+              description: 'عدد الأشهر بين كل ترقية (للتنبيه)',
+              controller: _beltPromotionController,
+              hint: '3',
+              icon: Icons.sports_martial_arts,
+            ),
+            const Divider(),
+
+            // 4. تنبيه تأخر الدفع
+            _buildNotificationSetting(
+              title: 'تنبيه تأخر الدفع',
+              description: 'عدد أشهر التأخر في الدفع للتنبيه',
+              controller: _paymentDelayController,
+              hint: '2',
+              icon: Icons.payments,
+            ),
+
+            const SizedBox(height: 16),
+
+            // زر حفظ إعدادات التنبيهات
+            ElevatedButton(
+              onPressed: _saveSettings,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              child:
+                  const Text('حفظ الإعدادات', style: TextStyle(fontSize: 16)),
             ),
           ],
         ),
       ],
+    );
+  }
+
+// ==================== عنصر إعداد التنبيه ====================
+  Widget _buildNotificationSetting({
+    required String title,
+    required String description,
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xFFE53935), size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  description,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                hintText: hint,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
