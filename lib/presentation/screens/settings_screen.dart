@@ -393,6 +393,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             onPressed: _saveSettings,
             tooltip: 'حفظ',
           ),
+          Text("حفظ الجميع"),
         ],
       ),
       body: TabBarView(
@@ -805,8 +806,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 backgroundColor: const Color(0xFFE53935),
                 minimumSize: const Size(double.infinity, 50),
               ),
-              child:
-                  const Text('حفظ الإعدادات', style: TextStyle(fontSize: 16)),
+              child: const Text('حفظ الإعدادات',
+                  style: TextStyle(fontSize: 18, color: Colors.white)),
             ),
           ],
         ),

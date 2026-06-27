@@ -20,17 +20,10 @@ import 'package:path_provider/path_provider.dart';
 import 'presentation/bloc/notification/notification_bloc.dart';
 import 'presentation/screens/onboarding_screen.dart';
 
-/* // في main.dart، قبل runApp
-Future<void> _cleanExtraSessions() async {
-  try {
-    final db = await getIt<AppDatabase>().database;
-    await db.delete('extra_sessions');
-    print('✅ تم حذف جميع الحصص الاستثنائية القديمة');
-  } catch (e) {
-    print('⚠️ خطأ في حذف الحصص الاستثنائية: $e');
-  }
-}
- */
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'app/themes.dart';
+
 /* Future<void> _resetDatabase() async {
   try {
     final databasesPath = await getDatabasesPath();
@@ -84,81 +77,13 @@ void _runNotificationChecks() {
   service.runAllChecks();
 }
 
+/* 
 class MyApp extends StatelessWidget {
   final bool isFirstTime;
   const MyApp({
     super.key,
     required this.isFirstTime, // التمرير إجباري هنا
   });
-
-/*   @override
-  Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Fight Club Manager',
-      locale: const Locale('ar', 'DZ'), // ✅ ضبط اللغة العربية
-      theme: ThemeData(
-        brightness: Brightness.light,
-        primaryColor: const Color(0xFFE53935),
-        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
-        fontFamily: GoogleFonts.cairo().fontFamily,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFE53935),
-          elevation: 0,
-          centerTitle: true,
-          iconTheme: IconThemeData(color: Colors.white),
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFE53935),
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-      ),
-      routerConfig: router,
-      builder: (context, child) {
-        final screenSize = MediaQuery.of(context).size;
-        final shortestSide = screenSize.shortestSide;
-
-        if (shortestSide < 360) {
-          return MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: const TextScaler.linear(0.85)),
-            child: child!,
-          );
-        }
-        return child!;
-      },
-    );
-  }
- */
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +151,37 @@ class MyApp extends StatelessWidget {
           return child!;
         },
       ),
+    );
+  }
+}
+ */
+
+// lib/main.dart
+// تأكد من أن التطبيق يستخدم الخلفية البيضاء
+
+class MyApp extends StatelessWidget {
+  final bool isFirstTime;
+  const MyApp({super.key, required this.isFirstTime});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Fight Club Manager',
+      locale: const Locale('ar', 'DZ'),
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primaryColor: const Color(0xFFE53935),
+        scaffoldBackgroundColor: Colors.white,
+        fontFamily: 'Cairo',
+        // ... باقي الإعدادات
+      ),
+      routerConfig: router,
+      builder: (context, child) {
+        if (isFirstTime) {
+          return const OnboardingScreen();
+        }
+        return child!;
+      },
     );
   }
 }

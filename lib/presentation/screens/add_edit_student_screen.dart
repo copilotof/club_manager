@@ -422,7 +422,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
                     )
                   : Text(
                       isEdit ? 'تحديث البيانات' : 'إضافة الطالب',
-                      style: const TextStyle(fontSize: 16),
+                      style: const TextStyle(fontSize: 18, color: Colors.white),
                     ),
             ),
           ),
