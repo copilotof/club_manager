@@ -15,6 +15,9 @@ class PaymentModel {
   final int? prepaidMonths; // عدد الأشهر المدفوعة مسبقاً
   final int? prepaidStartMonth; // شهر البداية للدفعة المسبقة
   final int? prepaidEndMonth; // شهر النهاية للدفعة المسبقة
+// أضف هذه الحقول في PaymentModel
+  final bool? isExtraCompleted; // هل المستحقات الإضافية مكتملة؟
+  final double? extraTotalAmount; // المبلغ الإجمالي للمستحقات الإضافية
 
   // الحقول الجديدة
   final bool isPartial;
@@ -39,6 +42,8 @@ class PaymentModel {
     this.isGifted = false,
     this.notes,
     this.isPartial = false,
+    this.isExtraCompleted = false,
+    this.extraTotalAmount,
     this.parentPaymentId,
     this.discountMonths,
     this.discountPercentage,
@@ -72,7 +77,6 @@ class PaymentModel {
       'target_month': targetMonth,
       'target_year': targetYear,
       'remaining_amount': remainingAmount,
-
       'prepaid_months': prepaidMonths,
       'prepaid_start_month': prepaidStartMonth,
       'prepaid_end_month': prepaidEndMonth,
@@ -100,7 +104,6 @@ class PaymentModel {
       targetMonth: map['target_month'],
       targetYear: map['target_year'],
       remainingAmount: map['remaining_amount']?.toDouble(),
-
       prepaidMonths: map['prepaid_months'],
       prepaidStartMonth: map['prepaid_start_month'],
       prepaidEndMonth: map['prepaid_end_month'],

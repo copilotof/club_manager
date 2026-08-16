@@ -238,6 +238,21 @@ class AppDatabase {
     FOREIGN KEY (group_id) REFERENCES groups (id) ON DELETE CASCADE
   )
 ''');
+
+// في دالة _createTables، أضف:
+    await db.execute('''
+  CREATE TABLE IF NOT EXISTS coach_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    session_date TEXT NOT NULL,
+    title TEXT,
+    parts TEXT NOT NULL,
+    general_notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+  )
+''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {

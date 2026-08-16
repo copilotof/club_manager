@@ -33,11 +33,16 @@ class AddPaymentScreen extends StatefulWidget {
   final VoidCallback onPaymentAdded;
   final int? initialYear;
 
+  final int? enrollmentYear; // جديد
+  final int? enrollmentMonth; // جديد
+
   const AddPaymentScreen({
     super.key,
     required this.studentId,
     required this.onPaymentAdded,
     this.initialYear,
+    this.enrollmentYear,
+    this.enrollmentMonth,
   });
 
   @override
@@ -79,6 +84,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
   void initState() {
     super.initState();
     _selectedYear = widget.initialYear ?? DateTime.now().year;
+    _validateSelectedYearMonth();
     _loadSettings();
     _loadStudentData();
   }
@@ -134,6 +140,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
   // ==================== تحميل بيانات الطالب ====================
   Future<void> _loadStudentData() async {
+    _validateSelectedYearMonth();
     final repo = PaymentRepository(localDb: getIt());
     final allPayments = await repo.getStudentPayments(widget.studentId);
 
@@ -390,9 +397,24 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
       try {
         String? extraReason;
+        double extraTotalAmount = 0;
+        bool isExtraCompleted = false;
+
         if (_paymentType == 'extra') {
           if (_selectedSportsItem != null) {
             extraReason = _selectedSportsItem!.name;
+            extraTotalAmount = _selectedSportsItem!.price;
+
+            // حساب المبلغ المدفوع مسبقاً
+            final repo = PaymentRepository(localDb: getIt());
+            final existingPayments =
+                await repo.getStudentPayments(widget.studentId);
+            final totalPaid = existingPayments
+                .where((p) => p.extraReason == extraReason && p.isExtra)
+                .fold<double>(0, (sum, p) => sum + p.amount);
+
+            final remaining = extraTotalAmount - totalPaid;
+            isExtraCompleted = remaining <= 0;
           } else {
             extraReason = 'مستحقات إضافية';
           }
@@ -411,6 +433,8 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           targetMonth: _paymentType == 'monthly' ? _selectedMonth : null,
           targetYear: _selectedYear,
+          isExtraCompleted: isExtraCompleted,
+          extraTotalAmount: extraTotalAmount,
         );
 
         final repo = PaymentRepository(localDb: getIt());
@@ -551,9 +575,160 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     return months[month - 1];
   }
 
+// ==================== جلب نطاق السنوات ====================
   List<int> _getAvailableYears() {
     final currentYear = DateTime.now().year;
-    return [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
+    final enrollmentYear = widget.enrollmentYear ?? currentYear;
+
+    // من سنة التسجيل إلى السنة الحالية + 1
+    List<int> years = [];
+    for (int year = enrollmentYear; year <= currentYear + 1; year++) {
+      years.add(year);
+    }
+    return years;
+  }
+
+// ==================== جلب نطاق الأشهر ====================
+/*   List<int> _getAvailableMonths() {
+    final currentMonth = DateTime.now().month;
+    final currentYear = DateTime.now().year;
+    final enrollmentMonth = widget.enrollmentMonth ?? 1;
+    final enrollmentYear = widget.enrollmentYear ?? currentYear;
+    final selectedYear = _selectedYear ?? currentYear;
+
+    print('📊 نطاق الأشهر:');
+    print('   سنة التسجيل: $enrollmentYear, شهر التسجيل: $enrollmentMonth');
+    print('   السنة المختارة: $selectedYear');
+    print('   السنة الحالية: $currentYear, الشهر الحالي: $currentMonth');
+
+    // ✅ حالة 1: سنة التسجيل
+    if (selectedYear == enrollmentYear) {
+      final months = List.generate(
+          12 - enrollmentMonth + 1, (index) => enrollmentMonth + index);
+      print('   ✅ أشهر سنة التسجيل: $months');
+      return months;
+    }
+
+    // ✅ حالة 2: السنة الحالية (السنة التي نحن فيها الآن)
+    if (selectedYear == currentYear) {
+      // ✅ إذا كانت السنة الحالية هي نفسها سنة التسجيل، استخدم حالة سنة التسجيل
+      if (selectedYear == enrollmentYear) {
+        final months = List.generate(
+            12 - enrollmentMonth + 1, (index) => enrollmentMonth + index);
+        print('   ✅ أشهر سنة التسجيل (وهي السنة الحالية): $months');
+        return months;
+      }
+      // ✅ إذا كانت السنة الحالية مختلفة عن سنة التسجيل (أكبر منها)
+      final months = List.generate(currentMonth, (index) => index + 1);
+      print('   ✅ أشهر السنة الحالية (حتى الشهر الحالي): $months');
+      return months;
+    }
+
+    // ✅ حالة 3: سنوات بين سنة التسجيل والسنة الحالية (سنوات كاملة)
+    if (selectedYear > enrollmentYear && selectedYear < currentYear) {
+      final months = List.generate(12, (index) => index + 1);
+      print('   ✅ جميع أشهر السنة $selectedYear (سنة كاملة): $months');
+      return months;
+    }
+
+    // ✅ حالة 4: السنة القادمة (بعد السنة الحالية)
+    if (selectedYear == currentYear + 1) {
+      // السنة القادمة: تظهر الأشهر من 1 إلى 12 (كلها)
+      final months = List.generate(12, (index) => index + 1);
+      print('   ✅ أشهر السنة القادمة (كلها): $months');
+      return months;
+    }
+
+    // ✅ حالة 5: سنة قبل التسجيل
+    if (selectedYear < enrollmentYear) {
+      print('   ⚠️ سنة قبل التسجيل، لا توجد أشهر');
+      return [];
+    }
+
+    // ✅ حالة 6: سنة بعد السنة القادمة (لا تظهر)
+    if (selectedYear > currentYear + 1) {
+      print('   ⚠️ سنة بعيدة جداً، لا توجد أشهر');
+      return [];
+    }
+
+    print('   ⚠️ حالة غير متوقعة، قائمة فارغة');
+    return [];
+  }
+ */
+  // ==================== جلب نطاق الأشهر ====================
+  List<int> _getAvailableMonths() {
+    final currentMonth = DateTime.now().month;
+    final currentYear = DateTime.now().year;
+    final enrollmentMonth = widget.enrollmentMonth ?? 1;
+    final enrollmentYear = widget.enrollmentYear ?? currentYear;
+    final selectedYear = _selectedYear ?? currentYear;
+
+    print('📊 نطاق الأشهر:');
+    print('   سنة التسجيل: $enrollmentYear, شهر التسجيل: $enrollmentMonth');
+    print('   السنة المختارة: $selectedYear');
+    print('   السنة الحالية: $currentYear, الشهر الحالي: $currentMonth');
+
+    // ✅ حالة 1: سنة التسجيل
+    if (selectedYear == enrollmentYear) {
+      final months = List.generate(
+          12 - enrollmentMonth + 1, (index) => enrollmentMonth + index);
+      print('   ✅ أشهر سنة التسجيل: $months');
+      return months;
+    }
+
+    // ✅ حالة 2: السنة الحالية
+    if (selectedYear == currentYear) {
+      // ✅ إذا كان الطالب مسجلاً منذ سنة سابقة (enrollmentYear < currentYear)
+      if (enrollmentYear < currentYear) {
+        // ✅ جميع أشهر السنة (1-12) لأن الطالب مسجل طوال السنة
+        final months = List.generate(12, (index) => index + 1);
+        print(
+            '   ✅ جميع أشهر السنة الحالية (طالب مسجل منذ $enrollmentYear): $months');
+        return months;
+      }
+
+      // ✅ إذا كانت السنة الحالية هي نفسها سنة التسجيل
+      if (selectedYear == enrollmentYear) {
+        final months = List.generate(
+            12 - enrollmentMonth + 1, (index) => enrollmentMonth + index);
+        print('   ✅ أشهر سنة التسجيل (وهي السنة الحالية): $months');
+        return months;
+      }
+
+      // ✅ الحالة الافتراضية
+      final months = List.generate(currentMonth, (index) => index + 1);
+      print('   ✅ أشهر السنة الحالية (حتى الشهر الحالي): $months');
+      return months;
+    }
+
+    // ✅ حالة 3: سنوات بين سنة التسجيل والسنة الحالية (سنوات كاملة)
+    if (selectedYear > enrollmentYear && selectedYear < currentYear) {
+      final months = List.generate(12, (index) => index + 1);
+      print('   ✅ جميع أشهر السنة $selectedYear (سنة كاملة): $months');
+      return months;
+    }
+
+    // ✅ حالة 4: السنة القادمة (بعد السنة الحالية)
+    if (selectedYear == currentYear + 1) {
+      final months = List.generate(12, (index) => index + 1);
+      print('   ✅ أشهر السنة القادمة (كلها): $months');
+      return months;
+    }
+
+    // ✅ حالة 5: سنة قبل التسجيل
+    if (selectedYear < enrollmentYear) {
+      print('   ⚠️ سنة قبل التسجيل، لا توجد أشهر');
+      return [];
+    }
+
+    // ✅ حالة 6: سنة بعد السنة القادمة
+    if (selectedYear > currentYear + 1) {
+      print('   ⚠️ سنة بعيدة جداً، لا توجد أشهر');
+      return [];
+    }
+
+    print('   ⚠️ حالة غير متوقعة، قائمة فارغة');
+    return [];
   }
 
   @override
@@ -561,6 +736,19 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     _amountController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  void _validateSelectedYearMonth() {
+    // السنوات المتاحة
+    final years = _getAvailableYears();
+    if (!years.contains(_selectedYear) && years.isNotEmpty) {
+      _selectedYear = years.last;
+    }
+
+    final months = _getAvailableMonths();
+    if (!months.contains(_selectedMonth) && months.isNotEmpty) {
+      _selectedMonth = months.last;
+    }
   }
 
   // ==================== واجهة المستخدم ====================
@@ -654,41 +842,47 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
             // 4. مستحقات إضافية (كل الحقول موجودة هنا)
             if (_paymentType == 'extra') ...[
-              // قائمة الأدوات الرياضية
-              DropdownButtonFormField<SportsItem>(
-                decoration: const InputDecoration(
-                  labelText: 'اختر الأداة الرياضية',
-                  prefixIcon: Icon(Icons.shopping_bag),
-                  border: OutlineInputBorder(),
-                ),
-                value: _selectedSportsItem,
-                isExpanded: true,
-                items: [
-                  const DropdownMenuItem<SportsItem>(
-                    value: null,
-                    child: Text('-- اختر أداة --'),
-                  ),
-                  ..._sportsItems.map((item) {
-                    return DropdownMenuItem<SportsItem>(
-                      value: item,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(item.name),
-                          Text(
-                            '${item.price.toStringAsFixed(0)} دج',
-                            style: const TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: _onSportsItemSelected,
+              // ==================== حقل الأداة الرياضية (مع إدخال يدوي) ====================
+              Autocomplete<String>(
+                optionsBuilder: (TextEditingValue textEditingValue) {
+                  if (textEditingValue.text.isEmpty) {
+                    return _sportsItems.map((item) => item.name);
+                  }
+                  return _sportsItems
+                      .where(
+                          (item) => item.name.contains(textEditingValue.text))
+                      .map((item) => item.name);
+                },
+                onSelected: (String selection) {
+                  final item = _sportsItems.firstWhere(
+                    (i) => i.name == selection,
+                    orElse: () => SportsItem(id: 0, name: selection, price: 0),
+                  );
+                  setState(() {
+                    _selectedSportsItem = item;
+                    _amountController.text = item.price.toString();
+                  });
+                },
+                fieldViewBuilder:
+                    (context, controller, focusNode, onFieldSubmitted) {
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(
+                      labelText: 'اختر أو اكتب اسم الأداة الرياضية *',
+                      prefixIcon: Icon(Icons.shopping_bag),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'الرجاء إدخال أو اختيار أداة رياضية';
+                      }
+                      return null;
+                    },
+                  );
+                },
               ),
+
               const SizedBox(height: 16),
 
               // المبلغ
@@ -814,34 +1008,27 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                         ),
                         value: _selectedMonth,
                         isExpanded: true,
-                        items: List.generate(12, (index) {
-                          int month = index + 1;
-                          bool isCompleted =
-                              _completedMonthsByYear[_selectedYear]?[month] ==
+
+// في Dropdown الشهر
+                        items: _getAvailableMonths().map((month) {
+                          final isCompleted =
+                              _completedMonthsByYear[_selectedYear!]?[month] ==
                                   true;
                           return DropdownMenuItem(
                             value: month,
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Flexible(
-                                  child: Text(
-                                    _getMonthName(month),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                                Text(_getMonthName(month)),
                                 if (isCompleted) ...[
                                   const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.check_circle,
-                                    size: 14,
-                                    color: Colors.green,
-                                  ),
+                                  const Icon(Icons.check_circle,
+                                      size: 14, color: Colors.green),
                                 ],
                               ],
                             ),
                           );
-                        }),
+                        }).toList(),
+
                         onChanged: (value) {
                           setState(() {
                             _selectedMonth = value!;
@@ -868,6 +1055,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                       onChanged: (value) async {
                         setState(() {
                           _selectedYear = value!;
+                          _validateSelectedYearMonth(); // جديد، يضبط الشهر إذا صار خارج النطاق
                         });
                         await _loadStudentData();
                       },

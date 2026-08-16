@@ -66,13 +66,20 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     });
 
     try {
-      // ✅ إعادة تحميل الطلاب والدفعات
       _students = await _studentRepo.getAllStudents();
       _payments = await _paymentRepo.getAllPayments();
 
-      // ✅ إعادة حساب المدانين والمهدى إليهم
       await _calculateDebtors();
       await _calculateGiftedStudents();
+
+      // ✅ تحديث الإحصائيات
+      final totalIncome = _calculateTotalIncome();
+      final totalOutstanding = await _calculateTotalOutstanding();
+      final totalGifted = _calculateTotalGifted();
+
+      print('📊 إجمالي الإيرادات: $totalIncome');
+      print('📊 إجمالي المتأخرات: $totalOutstanding');
+      print('📊 إجمالي المهداة: $totalGifted');
     } catch (e) {
       print('❌ خطأ في تحميل البيانات: $e');
     } finally {
@@ -83,27 +90,37 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
   }
 
   // حساب المتأخرات (السنة الحالية من الشهر 1 إلى الشهر الحالي)
-  Future<void> _calculateDebtors() async {
+/*   Future<void> _calculateDebtors() async {
     final currentMonth = DateTime.now().month;
     List<Map<String, dynamic>> debtors = [];
 
     for (var student in _students) {
       double totalOutstanding = 0;
 
-      // حساب الاشتراكات الشهرية غير المكتملة
-      for (int month = 1; month <= currentMonth; month++) {
+      // حساب الاشتراكات الشهرية من تاريخ التسجيل
+      final enrollmentMonth = student.enrollmentDate.month;
+      final enrollmentYear = student.enrollmentDate.year;
+
+      for (int month = enrollmentMonth; month <= currentMonth; month++) {
+        int actualYear = enrollmentYear;
+        int actualMonth = month;
+        if (month > 12) {
+          actualMonth = month - 12;
+          actualYear++;
+        }
+
         final paid = await _paymentRepo.getTotalPaidForTarget(
           studentId: student.id!,
           paymentType: 'monthly',
-          targetMonth: month,
-          targetYear: _selectedYear,
+          targetMonth: actualMonth,
+          targetYear: actualYear,
         );
         if (paid < _monthlyFee) {
           totalOutstanding += (_monthlyFee - paid);
         }
       }
 
-      // حساب التأمين غير المكتمل
+      // حساب التأمين
       final insurancePaid = await _paymentRepo.getTotalPaidForTarget(
         studentId: student.id!,
         paymentType: 'insurance',
@@ -114,14 +131,73 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
       }
 
       if (totalOutstanding > 0) {
-        debtors.add({'student': student, 'amount': totalOutstanding});
+        debtors.add({
+          'student': student,
+          'amount': totalOutstanding,
+        });
       }
     }
 
-    // ترتيب من الأكثر إدانة إلى الأقل
     debtors.sort(
-      (a, b) => (b['amount'] as double).compareTo(a['amount'] as double),
-    );
+        (a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
+
+    setState(() {
+      _debtors = debtors;
+    });
+  }
+ */
+  Future<void> _calculateDebtors() async {
+    List<Map<String, dynamic>> debtors = [];
+
+    for (var student in _students) {
+      double totalOutstanding = 0;
+
+      // ✅ حساب الاشتراكات الشهرية من تاريخ التسجيل إلى اليوم
+      final enrollmentDate = student.enrollmentDate;
+      final now = DateTime.now();
+
+      for (int year = enrollmentDate.year; year <= now.year; year++) {
+        int endMonth = (year == now.year) ? now.month : 12;
+        int startMonth =
+            (year == enrollmentDate.year) ? enrollmentDate.month : 1;
+
+        for (int month = startMonth; month <= endMonth; month++) {
+          final paid = await _paymentRepo.getTotalPaidForTarget(
+            studentId: student.id!,
+            paymentType: 'monthly',
+            targetMonth: month,
+            targetYear: year,
+          );
+          if (paid < _monthlyFee) {
+            totalOutstanding += (_monthlyFee - paid);
+          }
+        }
+      }
+
+      // ✅ حساب التأمين للسنة الحالية
+      final insurancePaid = await _paymentRepo.getTotalPaidForTarget(
+        studentId: student.id!,
+        paymentType: 'insurance',
+        targetYear: now.year,
+      );
+      if (insurancePaid < _insuranceFee) {
+        totalOutstanding += (_insuranceFee - insurancePaid);
+      }
+
+      // ✅ مستحقات إضافية غير مكتملة
+      final extraDebts = await _calculateExtraDebts(student.id!);
+      totalOutstanding += extraDebts;
+
+      if (totalOutstanding > 0) {
+        debtors.add({
+          'student': student,
+          'amount': totalOutstanding,
+        });
+      }
+    }
+
+    debtors.sort(
+        (a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
 
     setState(() {
       _debtors = debtors;
@@ -569,6 +645,54 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     try {
       final paymentRepo = PaymentRepository(localDb: getIt());
 
+      // ✅ حساب متأخرات الاشتراكات الشهرية من تاريخ التسجيل
+      final enrollmentDate = student.enrollmentDate;
+      final now = DateTime.now();
+
+      for (int year = enrollmentDate.year; year <= now.year; year++) {
+        int endMonth = (year == now.year) ? now.month : 12;
+        int startMonth =
+            (year == enrollmentDate.year) ? enrollmentDate.month : 1;
+
+        for (int month = startMonth; month <= endMonth; month++) {
+          final paid = await paymentRepo.getTotalPaidForTarget(
+            studentId: student.id!,
+            paymentType: 'monthly',
+            targetMonth: month,
+            targetYear: year,
+          );
+          if (paid < _monthlyFee) {
+            totalDebt += (_monthlyFee - paid);
+          }
+        }
+      }
+
+      // ✅ حساب متأخرات التأمين للسنة الحالية
+      final insurancePaid = await paymentRepo.getTotalPaidForTarget(
+        studentId: student.id!,
+        paymentType: 'insurance',
+        targetYear: DateTime.now().year,
+      );
+      if (insurancePaid < _insuranceFee) {
+        totalDebt += (_insuranceFee - insurancePaid);
+      }
+
+      // ✅ حساب المستحقات الإضافية غير المكتملة
+      final extraDebts = await _calculateExtraDebts(student.id!);
+      totalDebt += extraDebts;
+    } catch (e) {
+      print('❌ خطأ في حساب المبلغ المدان: $e');
+    }
+
+    return totalDebt;
+  }
+
+/*   Future<double> _calculateStudentDebt(StudentModel student) async {
+    double totalDebt = 0;
+
+    try {
+      final paymentRepo = PaymentRepository(localDb: getIt());
+
       // ✅ حساب متأخرات الاشتراكات الشهرية
       for (int month = 1; month <= DateTime.now().month; month++) {
         final paid = await paymentRepo.getTotalPaidForTarget(
@@ -597,7 +721,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
 
     return totalDebt;
   }
-
+ */
 // دوال مساعدة (مؤقتة)
   double _getMonthlyPaid(int studentId, int month, int year) {
     // ✅ يجب جلب البيانات من قاعدة البيانات
@@ -661,5 +785,109 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
         );
       },
     );
+  }
+
+// ==================== حساب مستحقات إضافية غير مكتملة للطالب ====================
+  Future<double> _calculateExtraDebts(int studentId) async {
+    try {
+      final payments = await _paymentRepo.getStudentPayments(studentId);
+      Map<String, double> extraTotals = {};
+      Map<String, double> extraPaid = {};
+
+      for (var p in payments) {
+        if (p.isExtra && p.extraReason != null) {
+          final key = p.extraReason!;
+          extraTotals[key] = _getExtraTotalAmount(key);
+          extraPaid[key] = (extraPaid[key] ?? 0) + p.amount;
+        }
+      }
+
+      double totalDebt = 0;
+      for (var key in extraTotals.keys) {
+        final total = extraTotals[key] ?? 0;
+        final paid = extraPaid[key] ?? 0;
+        if (paid < total) {
+          totalDebt += (total - paid);
+        }
+      }
+      return totalDebt;
+    } catch (e) {
+      print('❌ خطأ في حساب المستحقات الإضافية: $e');
+      return 0;
+    }
+  }
+
+// ==================== الحصول على السعر الإجمالي للمستحقات الإضافية ====================
+  double _getExtraTotalAmount(String extraReason) {
+    // البحث عن السعر من الإعدادات
+    // يمكن جلبها من SharedPreferences
+    // مؤقتاً: نرجع قيمة افتراضية
+    return 2000; // يجب جلبها من الإعدادات
+  }
+
+// ==================== حساب إجمالي المتأخرات (لجميع الطلاب) ====================
+  Future<double> _calculateTotalOutstanding() async {
+    double total = 0;
+
+    for (var student in _students) {
+      // حساب متأخرات الطالب من تاريخ التسجيل
+      final enrollmentDate = student.enrollmentDate;
+      final now = DateTime.now();
+
+      for (int year = enrollmentDate.year; year <= now.year; year++) {
+        int endMonth = (year == now.year) ? now.month : 12;
+        int startMonth =
+            (year == enrollmentDate.year) ? enrollmentDate.month : 1;
+
+        for (int month = startMonth; month <= endMonth; month++) {
+          int actualYear = year;
+          int actualMonth = month;
+          if (month > 12) {
+            actualMonth = month - 12;
+            actualYear++;
+          }
+
+          final paid = await _paymentRepo.getTotalPaidForTarget(
+            studentId: student.id!,
+            paymentType: 'monthly',
+            targetMonth: actualMonth,
+            targetYear: actualYear,
+          );
+          if (paid < _monthlyFee) {
+            total += (_monthlyFee - paid);
+          }
+        }
+      }
+
+      // التأمين للسنة الحالية
+      final insurancePaid = await _paymentRepo.getTotalPaidForTarget(
+        studentId: student.id!,
+        paymentType: 'insurance',
+        targetYear: now.year,
+      );
+      if (insurancePaid < _insuranceFee) {
+        total += (_insuranceFee - insurancePaid);
+      }
+
+      // مستحقات إضافية غير مكتملة
+      final extraDebts = await _calculateExtraDebts(student.id!);
+      total += extraDebts;
+    }
+
+    return total;
+  }
+
+// ==================== حساب إجمالي الإيرادات ====================
+  double _calculateTotalIncome() {
+    return _payments
+        .where((p) => !p.isGifted)
+        .fold<double>(0, (sum, p) => sum + p.amount);
+  }
+
+// ==================== حساب إجمالي المهداة ====================
+  double _calculateTotalGifted() {
+    return _payments
+        .where((p) => p.isGifted)
+        .fold<double>(0, (sum, p) => sum + p.amount);
   }
 }

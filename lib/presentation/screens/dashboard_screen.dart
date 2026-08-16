@@ -7,6 +7,7 @@ import '../bloc/notification/events/notification_event.dart';
 import '../bloc/notification/states/notification_state.dart';
 import '../../core/utils/responsive_utils.dart';
 import '../../injection/dependency_injection.dart';
+import 'attendance_stats_screen.dart';
 import 'financial_dashboard_screen.dart';
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
@@ -230,6 +231,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
+            ),
+
+            _buildMenuItem(
+              icon: Icons.bar_chart,
+              title: 'إحصائيات',
+              color: Colors.teal.shade50,
+              iconColor: Colors.teal.shade700,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AttendanceStatsScreen()),
+                );
+              },
             ),
 
             // ==================== تذييل بسيط ====================

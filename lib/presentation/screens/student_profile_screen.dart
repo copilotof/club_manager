@@ -57,6 +57,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   double _insuranceFee = 1000;
 
   List<BeltModel> _studentBelts = [];
+  List<PaymentModel> _studentPayments = [];
+
+  List<PaymentModel> _allPaymentsCache = [];
+
+  List<PaymentModel> _payments = [];
 
   @override
   void initState() {
@@ -68,11 +73,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       initialIndex: widget.initialTab ?? 0,
     );
     _studentBloc.add(LoadStudentsEvent());
-    _loadFees(); // ✅ تحميل القيم من الإعدادات
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkDatabaseStructure();
     });
     _loadStudentBelts();
+
+    _loadFees(); // ✅ تحميل القيم من الإعدادات
   }
 
   void _refreshPayments() {
@@ -102,60 +109,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       _studentBloc.add(LoadStudentsEvent());
     }
   }
-/* 
-  void _showQRCode() {
-    if (_student == null) return;
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: Colors.white,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'بطاقة الطالب',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              QrImageView(
-                data: _student!.id.toString(),
-                version: QrVersions.auto,
-                size: 180,
-                backgroundColor: Colors.white,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _student!.fullName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'الرقم التعريفي: ${_student!.id}',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE53935),
-                ),
-                child: const Text('إغلاق'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
- */
 
   void _showQRCode() {
     if (_student == null) return;
@@ -559,20 +512,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 ],
               ),
               const SizedBox(height: 12),
-              /*
-              // فلتر المبالغ غير المسددة
-              FilterChip(
-                label: const Text('غير مكتملة'),
-                selected: _showOnlyUnpaid,
-                onSelected: (value) {
-                  setState(() {
-                    _showOnlyUnpaid = value;
-                    _paymentsRefresh = !_paymentsRefresh;
-                  });
-                },
-                selectedColor: const Color(0xFFE53935).withOpacity(0.2),
-              ),
-              */
               // صف الأزرار
               Wrap(
                 spacing: 8,
@@ -591,19 +530,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                     selectedColor: const Color(0xFFE53935).withOpacity(0.2),
                   ),
                   // ✅ فلتر المستحقات الإضافية
+// إضافة فلتر جديد
                   FilterChip(
                     label: const Text('مستحقات إضافية'),
                     selected: _showOnlyExtra,
                     onSelected: (value) {
                       setState(() {
                         _showOnlyExtra = value;
-                        if (value)
-                          _showOnlyUnpaid = false; // إلغاء الفلتر الآخر
+                        if (value) _showOnlyUnpaid = false;
                         _paymentsRefresh = !_paymentsRefresh;
                       });
                     },
                     selectedColor: Colors.orange.withOpacity(0.2),
-                    avatar: const Icon(Icons.shopping_bag, size: 16),
                   ),
                 ],
               ),
@@ -694,7 +632,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 padding: const EdgeInsets.all(12),
                 children: [
                   // بطاقة الإجمالي
-                  Container(
+/*                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -726,6 +664,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                       ],
                     ),
                   ),
+ */
+
+                  // ✅ بطاقة الإجمالي مع المتأخرات
+                  _buildTotalCard(),
                   const SizedBox(height: 16),
                   ...payments.map((p) => _buildPaymentCard(p)),
                 ],
@@ -840,6 +782,543 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
+// ==================== بناء بطاقة الإجمالي ====================
+// ==================== بطاقة الإجمالي مع المتأخرات ====================
+  Widget _buildTotalCard() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _calculateTotalDebt(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE53935), Color(0xFFC62828)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final data = snapshot.data ?? {'total': 0.0, 'details': []};
+        final totalPaid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
+        final totalDebt = data['total'] as double;
+
+        return GestureDetector(
+          onTap: () => _showDebtDetails(data['details']),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE53935), Color(0xFFC62828)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                // ✅ إجمالي المدفوعات
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text(
+                        'إجمالي المدفوعات',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${totalPaid.toStringAsFixed(0)} دج',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // ✅ الفاصل
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: Colors.white.withOpacity(0.3),
+                ),
+                // ✅ إجمالي المتأخرات
+                Expanded(
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'إجمالي المتأخرات',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.white.withOpacity(0.5),
+                            size: 14,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${totalDebt.toStringAsFixed(0)} دج',
+                        style: TextStyle(
+                          color: totalDebt > 0
+                              ? Colors.orangeAccent
+                              : Colors.greenAccent,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+/* Widget _buildTotalCard() {
+  return FutureBuilder<Map<String, dynamic>>(
+    future: _calculateTotalDebt(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        );
+      }
+      
+      final data = snapshot.data ?? {'total': 0.0, 'details': []};
+      final totalPaid = _payments.fold<double>(0, (sum, p) => sum + p.amount);
+      final totalDebt = data['total'] as double;
+      
+      return Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem(
+                      'إجمالي المدفوعات',
+                      '${totalPaid.toStringAsFixed(0)} دج',
+                      Icons.payments,
+                      Colors.green,
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 50,
+                    color: Colors.grey.shade300,
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _showDebtDetails(data['details']),
+                      child: _buildStatItem(
+                        'إجمالي المتأخرات',
+                        '${totalDebt.toStringAsFixed(0)} دج',
+                        Icons.warning_amber,
+                        totalDebt > 0 ? Colors.red : Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (totalDebt > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '👆 اضغط على المتأخرات للتفاصيل',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+ */
+  Widget _buildStatItem(
+      String title, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        Text(
+          title,
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+/*   void _showDebtDetails(List<Map<String, dynamic>> details) {
+    if (details.isEmpty) {
+      CustomSnackbar.showSuccess(context, '🎉 لا توجد متأخرات');
+      return;
+    }
+
+    final totalDebt =
+        details.fold<double>(0, (sum, d) => sum + (d['remaining'] as double));
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber, color: Colors.red),
+            const SizedBox(width: 8),
+            Text('تفاصيل المتأخرات (${totalDebt.toStringAsFixed(0)} دج)'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: details.length,
+            itemBuilder: (context, index) {
+              final item = details[index];
+              final type = item['type'] as String;
+              final remaining = item['remaining'] as double;
+
+              String subtitle = '';
+              if (type == 'اشتراك شهري') {
+                subtitle = 'شهر ${item['month']}/${item['year']}';
+              } else if (type == 'حقوق التأمين') {
+                subtitle = 'سنة ${item['year']}';
+              } else if (type == 'مستحقات إضافية') {
+                subtitle = item['name'] ?? '';
+              }
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.red.shade100,
+                    child: Text(
+                      type == 'اشتراك شهري'
+                          ? '📅'
+                          : type == 'حقوق التأمين'
+                              ? '🛡️'
+                              : '🛒',
+                    ),
+                  ),
+                  title: Text(type),
+                  subtitle: Text(subtitle),
+                  trailing: Text(
+                    '${remaining.toStringAsFixed(0)} دج',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+ */
+
+  void _showDebtDetails(List<Map<String, dynamic>> details) {
+    if (details.isEmpty) {
+      CustomSnackbar.showSuccess(context, '🎉 لا توجد متأخرات');
+      return;
+    }
+
+    // تجميع المتأخرات حسب النوع
+    final monthlyDebts =
+        details.where((d) => d['type'] == 'اشتراك شهري').toList();
+    final insuranceDebts =
+        details.where((d) => d['type'] == 'حقوق التأمين').toList();
+    final extraDebts =
+        details.where((d) => d['type'] == 'مستحقات إضافية').toList();
+
+    final totalDebt =
+        details.fold<double>(0, (sum, d) => sum + (d['remaining'] as double));
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxHeight: 500),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ✅ العنوان مع الإجمالي
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.red,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'المتأخرات المالية',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'الإجمالي: ${totalDebt.toStringAsFixed(0)} دج',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const Divider(height: 24),
+
+              // ✅ إحصائيات سريعة
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildDebtStatItem(
+                        'أشهر', monthlyDebts.length, Colors.blue),
+                    _buildDebtStatItem(
+                        'تأمين', insuranceDebts.length, Colors.green),
+                    _buildDebtStatItem(
+                        'مشتريات', extraDebts.length, Colors.orange),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ✅ قائمة المتأخرات
+              const Text(
+                'تفاصيل المتأخرات',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              Expanded(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: details.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 4),
+                  itemBuilder: (context, index) {
+                    final item = details[index];
+                    final type = item['type'] as String;
+                    final remaining = item['remaining'] as double;
+                    final paid = item['paid'] as double;
+                    final required = item['required'] as double;
+
+                    String title = '';
+                    String subtitle = '';
+                    IconData icon;
+                    Color color;
+
+                    if (type == 'اشتراك شهري') {
+                      title = 'اشتراك شهر ${item['month']}/${item['year']}';
+                      subtitle = 'المدفوع: ${paid.toStringAsFixed(0)} دج';
+                      icon = Icons.calendar_today;
+                      color = Colors.blue;
+                    } else if (type == 'حقوق التأمين') {
+                      title = 'حقوق التأمين ${item['year']}';
+                      subtitle = 'المدفوع: ${paid.toStringAsFixed(0)} دج';
+                      icon = Icons.security;
+                      color = Colors.green;
+                    } else if (type == 'مستحقات إضافية') {
+                      title = item['name'] ?? 'مستحقات إضافية';
+                      subtitle = 'المدفوع: ${paid.toStringAsFixed(0)} دج';
+                      icon = Icons.shopping_bag;
+                      color = Colors.orange;
+                    } else {
+                      title = type;
+                      subtitle = '';
+                      icon = Icons.payment;
+                      color = Colors.grey;
+                    }
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(icon, color: color, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (subtitle.isNotEmpty)
+                                  Text(
+                                    subtitle,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                // ✅ شريط التقدم
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: paid / required,
+                                    backgroundColor: Colors.grey[200],
+                                    color: paid >= required
+                                        ? Colors.green
+                                        : Colors.orange,
+                                    minHeight: 4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${remaining.toStringAsFixed(0)} دج',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade700,
+                                ),
+                              ),
+                              Text(
+                                'من ${required.toStringAsFixed(0)} دج',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ✅ زر إغلاق
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('إغلاق'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+// ==================== عنصر الإحصائية الصغير ====================
+  Widget _buildDebtStatItem(String label, int count, Color color) {
+    return Column(
+      children: [
+        Text(
+          count.toString(),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
   void _deleteBelt(BeltModel belt) async {
     final confirmed = await showDialog(
       context: context,
@@ -880,66 +1359,52 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           filtered.where((p) => p.paymentDate.year == _selectedYear).toList();
     }
 
-    // ✅ فلتر المستحقات الإضافية
-    if (_showOnlyExtra) {
-      filtered = filtered.where((p) => p.paymentType == 'extra').toList();
-      return filtered;
+    // ✅ تصفية المبالغ غير المكتملة فقط
+    if (_showOnlyUnpaid) {
+      filtered = filtered.where((p) {
+        // ✅ مستحقات إضافية غير مكتملة
+        if (p.isExtra && p.extraReason != null) {
+          final allPayments = _allPaymentsCache;
+          final totalPaid = allPayments
+              .where((pp) => pp.isExtra && pp.extraReason == p.extraReason)
+              .fold<double>(0, (sum, pp) => sum + pp.amount);
+          final totalAmount = _getExtraTotalAmount(p.extraReason!);
+          return totalPaid < totalAmount;
+        }
+
+        // ✅ اشتراك شهري غير مكتمل
+        if (p.paymentType == 'monthly') {
+          final month = p.targetMonth ?? p.month;
+          final year = p.targetYear ?? p.year;
+          if (month != null && year != null) {
+            final totalPaidForMonth = _allPaymentsCache
+                .where((pp) =>
+                    pp.paymentType == 'monthly' &&
+                    pp.targetMonth == month &&
+                    pp.targetYear == year)
+                .fold<double>(0, (sum, pp) => sum + pp.amount);
+            return totalPaidForMonth < _monthlyFee;
+          }
+        }
+
+        // ✅ حقوق التأمين غير مكتملة
+        if (p.paymentType == 'insurance') {
+          final year = p.targetYear ?? p.year;
+          if (year != null) {
+            final totalPaidForYear = _allPaymentsCache
+                .where((pp) =>
+                    pp.paymentType == 'insurance' && pp.targetYear == year)
+                .fold<double>(0, (sum, pp) => sum + pp.amount);
+            return totalPaidForYear < _insuranceFee;
+          }
+        }
+
+        return false;
+      }).toList();
     }
 
-    // ✅ فلتر المبالغ غير المكتملة
-    if (_showOnlyUnpaid) {
-      // تجميع الدفعات حسب الهدف (شهرية أو تأمين)
-      Map<String, double> totals = {};
-      Map<String, String> types = {};
-
-      for (var p in filtered) {
-        String key;
-        if (p.paymentType == 'monthly') {
-          // مفتاح للاشتراك الشهري: الشهر + السنة
-          key = 'monthly_${p.targetYear ?? p.year}_${p.targetMonth ?? p.month}';
-          types[key] = 'monthly';
-        } else if (p.paymentType == 'insurance') {
-          // مفتاح للتأمين: السنة فقط
-          key = 'insurance_${p.targetYear ?? p.year}';
-          types[key] = 'insurance';
-        } else {
-          continue; // تجاهل المستحقات الإضافية
-        }
-        totals[key] = (totals[key] ?? 0) + p.amount;
-      }
-
-      // تحديد المفاتيح غير المكتملة
-      Set<String> incompleteKeys = {};
-      for (var entry in totals.entries) {
-        final key = entry.key;
-        final total = entry.value;
-        final requiredAmount =
-            types[key] == 'monthly' ? _monthlyFee : _insuranceFee;
-
-        if (total < requiredAmount) {
-          incompleteKeys.add(key);
-          print('📊 غير مكتمل: $key = $total / $requiredAmount');
-        } else {
-          print('✅ مكتمل: $key = $total / $requiredAmount');
-        }
-      }
-
-      // تصفية الدفعات التي تظهر
-      filtered = filtered.where((p) {
-        // استبعاد المستحقات الإضافية من التصفية
-        if (p.paymentType == 'extra') return false;
-
-        String key;
-        if (p.paymentType == 'monthly') {
-          key = 'monthly_${p.targetYear ?? p.year}_${p.targetMonth ?? p.month}';
-        } else if (p.paymentType == 'insurance') {
-          key = 'insurance_${p.targetYear ?? p.year}';
-        } else {
-          return false;
-        }
-
-        return incompleteKeys.contains(key);
-      }).toList();
+    if (_showOnlyExtra) {
+      filtered = filtered.where((p) => p.isExtra).toList();
     }
 
     return filtered;
@@ -1384,31 +1849,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   }
 
   // ✅ دالة جلب المدفوعات المحسّنة
+
   Future<List<PaymentModel>> _getStudentPayments() async {
     try {
       final db = await getIt<AppDatabase>().database;
-
-      // استعلام مباشر من قاعدة البيانات
       final result = await db.query(
         'payments',
         where: 'student_id = ?',
         whereArgs: [widget.studentId],
         orderBy: 'payment_date DESC',
       );
+      final payments = result.map((map) => PaymentModel.fromMap(map)).toList();
 
-      print(
-        '📊 استعلام مباشر: وجدت ${result.length} دفعة للطالب ${widget.studentId}',
-      );
+      // ✅ تخزين في المتغير
+      _payments = payments;
+      _allPaymentsCache = payments;
 
-      if (result.isNotEmpty) {
-        for (var row in result) {
-          print(
-            '   - الدفعة: ${row['amount']} دج, النوع: ${row['payment_type']}, التاريخ: ${row['payment_date']}',
-          );
-        }
-      }
-
-      return result.map((map) => PaymentModel.fromMap(map)).toList();
+      return payments;
     } catch (e) {
       print('❌ خطأ في جلب المدفوعات: $e');
       return [];
@@ -1430,6 +1887,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           initialYear: _selectedYear == 0
               ? DateTime.now().year
               : _selectedYear, // 👈 تمرير السنة
+          // ✅ تمرير تاريخ التسجيل
+          enrollmentYear: _student?.enrollmentDate.year,
+          enrollmentMonth: _student?.enrollmentDate.month,
         ),
       ),
     );
@@ -1487,25 +1947,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             ),
           ],
         ),
-
-        /*
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              '${payment.amount.toStringAsFixed(0)} دج',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: payment.isGifted
-                    ? Colors.purple
-                    : const Color(0xFFE53935),
-              ),
-            ),
-          ],
-        ),
-       */
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1605,7 +2046,60 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     }
   }
 
-  void _showPaymentDetails(PaymentModel payment) {
+  void _showPaymentDetails(PaymentModel payment) async {
+    // جلب جميع دفعات الطالب لحساب المتبقي
+    final allPayments = await _getStudentPayments();
+    final List<Widget> extraWidgets = [];
+
+    if (payment.isExtra && payment.extraReason != null) {
+      final totalPaid = _getTotalPaidForExtra(payment, allPayments);
+      final extraTotal = _getExtraTotalAmount(payment.extraReason!);
+      final remaining = extraTotal - totalPaid;
+
+      extraWidgets.add(const Divider());
+      extraWidgets.add(_buildDetailRow(
+          'المبلغ الإجمالي', '${extraTotal.toStringAsFixed(0)} دج'));
+      extraWidgets.add(
+          _buildDetailRow('المدفوع', '${totalPaid.toStringAsFixed(0)} دج'));
+      extraWidgets.add(
+          _buildDetailRow('المتبقي', '${remaining.toStringAsFixed(0)} دج'));
+
+      if (remaining > 0) {
+        extraWidgets.add(const SizedBox(height: 16));
+        extraWidgets.add(
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _settleExtraPayment(payment, remaining);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+              ),
+              child: const Text('تسديد الباقي'),
+            ),
+          ),
+        );
+      } else {
+        extraWidgets.add(const SizedBox(height: 8));
+        extraWidgets.add(
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.green.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              '✓ مكتمل',
+              style:
+                  TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      }
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1615,9 +2109,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildDetailRow(
-              'المبلغ',
-              '${payment.amount.toStringAsFixed(0)} دج',
-            ),
+                'المبلغ', '${payment.amount.toStringAsFixed(0)} دج'),
             _buildDetailRow('التاريخ', _formatDate(payment.paymentDate)),
             if (payment.month != null)
               _buildDetailRow('الشهر', '${payment.month}'),
@@ -1628,6 +2120,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             if (payment.isGifted) _buildDetailRow('نوع الدفعة', 'إهداء 🚀'),
             if (payment.notes != null)
               _buildDetailRow('ملاحظات', payment.notes!),
+            ...extraWidgets,
           ],
         ),
         actions: [
@@ -1638,6 +2131,82 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         ],
       ),
     );
+  }
+
+// ==================== جلب السعر الإجمالي للمستحقات الإضافية ====================
+  double _getExtraTotalAmount(String extraReason) {
+    // البحث عن السعر من قائمة الأدوات الرياضية في الإعدادات
+    // مؤقتاً: نرجع قيمة افتراضية
+    return 2000; // يجب جلبها من الإعدادات
+  }
+
+// ==================== جلب المبلغ المدفوع للمستحقات الإضافية ====================
+  double _getTotalPaidForExtra(
+      PaymentModel payment, List<PaymentModel> allPayments) {
+    final total = allPayments
+        .where((p) => p.isExtra && p.extraReason == payment.extraReason)
+        .fold<double>(0, (sum, p) => sum + p.amount);
+    return total;
+  }
+
+// دالة لتسديد الباقي
+  Future<void> _settleExtraPayment(
+      PaymentModel payment, double remaining) async {
+    // ✅ تأكيد العملية
+    final confirmed = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد التسديد'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('المبلغ المتبقي: ${remaining.toStringAsFixed(0)} دج'),
+            const SizedBox(height: 8),
+            Text('السبب: ${payment.extraReason ?? 'مستحقات إضافية'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('تأكيد التسديد'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // ✅ إنشاء دفعة جديدة بالمبلغ المتبقي
+      final newPayment = PaymentModel(
+        studentId: widget.studentId!,
+        amount: remaining,
+        paymentDate: DateTime.now(),
+        paymentType: 'extra',
+        isExtra: true,
+        extraReason: payment.extraReason,
+        isGifted: false,
+        isFullyPaid: true,
+        notes: 'تسديد الباقي للمستحقات الإضافية: ${payment.extraReason ?? ''}',
+      );
+
+      final repo = PaymentRepository(localDb: getIt());
+      await repo.addPayment(newPayment);
+
+      setState(() {
+        _paymentsRefresh = !_paymentsRefresh;
+      });
+
+      if (!mounted) return;
+      CustomSnackbar.showSuccess(context, 'تم تسديد الباقي بنجاح');
+    } catch (e) {
+      CustomSnackbar.showError(context, 'فشل تسديد الباقي');
+    }
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -1719,26 +2288,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     if (maxPossible == 0) return 0;
     return (total / maxPossible) * 100;
   }
-  /*
-  Color _getPaymentStatusColor(PaymentModel payment) {
-    if (payment.isGifted) return Colors.purple;
-    if (payment.isFullyPaid) return Colors.green;
-    if (payment.remainingAmount != null && payment.remainingAmount! > 0)
-      return Colors.orange;
-    if (payment.isPartial) return Colors.orange;
-    return Colors.grey;
-  }
-
-  String _getPaymentStatusText(PaymentModel payment) {
-    if (payment.isGifted) return 'إهداء';
-    if (payment.isFullyPaid) return 'مكتمل ✓';
-    if (payment.remainingAmount != null && payment.remainingAmount! > 0) {
-      return 'متبقي: ${payment.remainingAmount!.toStringAsFixed(0)} دج';
-    }
-    if (payment.isPartial) return 'دفعة جزئية';
-    return '';
-  }
-*/
 
   Color _getPaymentStatusColor(PaymentModel payment) {
     // إهداء
@@ -1849,5 +2398,113 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final repo = BeltRepository(localDb: getIt());
     _studentBelts = await repo.getStudentBelts(widget.studentId);
     setState(() {});
+  }
+
+  // ==================== حساب إجمالي المتأخرات ====================
+  Future<Map<String, dynamic>> _calculateTotalDebt() async {
+    final payments = await _getStudentPayments();
+    final student = _student!;
+
+    double totalDebt = 0;
+    List<Map<String, dynamic>> debtDetails = [];
+
+    // 1. حساب الأشهر غير المدفوعة (من تاريخ التسجيل إلى الشهر الحالي)
+    final now = DateTime.now();
+    final enrollmentDate = student.enrollmentDate;
+    int startMonth = enrollmentDate.month;
+    int startYear = enrollmentDate.year;
+
+    for (int year = startYear; year <= now.year; year++) {
+      int endMonth = (year == now.year) ? now.month : 12;
+      int startM = (year == startYear) ? startMonth : 1;
+
+      for (int month = startM; month <= endMonth; month++) {
+        // حساب المبلغ المدفوع لهذا الشهر
+        final paid = _getTotalPaidForMonth(payments, month, year);
+        if (paid < _monthlyFee) {
+          final remaining = _monthlyFee - paid;
+          totalDebt += remaining;
+          debtDetails.add({
+            'type': 'اشتراك شهري',
+            'month': month,
+            'year': year,
+            'paid': paid,
+            'required': _monthlyFee,
+            'remaining': remaining,
+          });
+        }
+      }
+    }
+
+    // 2. حقوق التأمين غير المسددة
+    final insurancePaid = _getTotalPaidForInsurance(payments, now.year);
+    if (insurancePaid < _insuranceFee) {
+      final remaining = _insuranceFee - insurancePaid;
+      totalDebt += remaining;
+      debtDetails.add({
+        'type': 'حقوق التأمين',
+        'year': now.year,
+        'paid': insurancePaid,
+        'required': _insuranceFee,
+        'remaining': remaining,
+      });
+    }
+
+    // 3. مستحقات إضافية غير مكتملة
+    final extraDebts = _getExtraDebts(payments);
+    for (var extra in extraDebts) {
+      totalDebt += extra['remaining'];
+      debtDetails.add(extra);
+    }
+
+    return {
+      'total': totalDebt,
+      'details': debtDetails,
+    };
+  }
+
+  double _getTotalPaidForMonth(
+      List<PaymentModel> payments, int month, int year) {
+    return payments
+        .where((p) =>
+            p.paymentType == 'monthly' &&
+            p.targetMonth == month &&
+            p.targetYear == year)
+        .fold<double>(0, (sum, p) => sum + p.amount);
+  }
+
+  double _getTotalPaidForInsurance(List<PaymentModel> payments, int year) {
+    return payments
+        .where((p) => p.paymentType == 'insurance' && p.targetYear == year)
+        .fold<double>(0, (sum, p) => sum + p.amount);
+  }
+
+  List<Map<String, dynamic>> _getExtraDebts(List<PaymentModel> payments) {
+    Map<String, double> extraTotals = {};
+    Map<String, double> extraPaid = {};
+
+    for (var p in payments) {
+      if (p.isExtra && p.extraReason != null) {
+        final key = p.extraReason!;
+        extraTotals[key] = _getExtraTotalAmount(key);
+        extraPaid[key] = (extraPaid[key] ?? 0) + p.amount;
+      }
+    }
+
+    List<Map<String, dynamic>> debts = [];
+    for (var key in extraTotals.keys) {
+      final total = extraTotals[key] ?? 0;
+      final paid = extraPaid[key] ?? 0;
+      if (paid < total) {
+        debts.add({
+          'type': 'مستحقات إضافية',
+          'name': key,
+          'paid': paid,
+          'required': total,
+          'remaining': total - paid,
+        });
+      }
+    }
+    return debts;
   }
 }

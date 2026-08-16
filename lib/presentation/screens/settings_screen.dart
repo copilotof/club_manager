@@ -46,6 +46,18 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   bool _isLoading = true;
 
+  // ✅ لتتبع وجود تغييرات غير محفوظة
+  bool _hasUnsavedChanges = false;
+
+  // دالة مساعدة لتعليم وجود تغييرات غير محفوظة
+  void _markUnsavedChanges() {
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
+  }
+
   // المتغيرات المستخدمة في التبويب
   List<HallModel> _halls = []; // قائمة القاعات
   int? _selectedHallId; // القاعة المختارة حالياً
@@ -59,10 +71,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _beltPromotionController = TextEditingController();
   final _paymentDelayController = TextEditingController();
 
+  List<String> _sessionParts = [];
+  final _newPartController = TextEditingController();
+  final _newPartTimeController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _loadSettings();
     _loadHalls(); // ✅ تحميل القاعات عند بدء الشاشة
   }
@@ -75,6 +91,20 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       final prefs = await SharedPreferences.getInstance();
 
+      final partsJson = prefs.getStringList('session_parts');
+      if (partsJson != null && partsJson.isNotEmpty) {
+        _sessionParts = partsJson;
+      } else {
+        // قيم افتراضية
+        _sessionParts = [
+          'تسخينات',
+          'جري',
+          'تمارين لياقة',
+          'تقنيات',
+          'منازلات',
+          'تبريد'
+        ];
+      }
       // القيم الأساسية
       _monthlyFeeController.text =
           prefs.getDouble('monthly_fee')?.toString() ?? '2000';
@@ -125,27 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _specialties = data.map((s) => SpecialtyItem.fromJson(s)).toList();
       } else {
         // بيانات افتراضية
-        _specialties = [
-          /*      SpecialtyItem(
-            id: 1,
-            name: 'واكو حلبة',
-            ageCategories: [
-              AgeCategoryItem(name: 'أكابر', minAge: 19, maxAge: 40),
-              AgeCategoryItem(name: 'أواسط', minAge: 17, maxAge: 18),
-              AgeCategoryItem(name: 'أشبال', minAge: 13, maxAge: 15),
-              AgeCategoryItem(name: 'أصاغر', minAge: 10, maxAge: 12),
-            ],
-          ),
-          SpecialtyItem(
-            id: 2,
-            name: 'واكو بساط',
-            ageCategories: [
-              AgeCategoryItem(name: 'أكابر', minAge: 19, maxAge: 40),
-              AgeCategoryItem(name: 'أواسط', minAge: 17, maxAge: 18),
-              AgeCategoryItem(name: 'أشبال', minAge: 13, maxAge: 15),
-            ],
-          ), */
-        ];
+        _specialties = [];
       }
     } catch (e) {
       print('خطأ في تحميل الإعدادات: $e');
@@ -180,6 +190,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         int.parse(_sessionsPerWeekController.text),
       );
 
+      await prefs.setStringList('session_parts', _sessionParts);
+
       // حفظ الأدوات الرياضية
       final sportsItemsJson = _sportsItems
           .map(
@@ -206,6 +218,11 @@ class _SettingsScreenState extends State<SettingsScreen>
         _specialties.map((s) => s.toJson()).toList(),
       );
       await prefs.setString('sports_specialties', specialtiesJson);
+
+      // ✅ إعادة تعيين مؤشر التغييرات غير المحفوظة بعد نجاح الحفظ
+      setState(() {
+        _hasUnsavedChanges = false;
+      });
 
       if (!mounted) return;
       CustomSnackbar.showSuccess(context, 'تم حفظ الإعدادات بنجاح');
@@ -234,12 +251,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
       _newItemNameController.clear();
       _newItemPriceController.clear();
+      _hasUnsavedChanges = true;
     });
   }
 
   void _removeSportsItem(int id) {
     setState(() {
       _sportsItems.removeWhere((item) => item.id == id);
+      _hasUnsavedChanges = true;
     });
   }
 
@@ -268,12 +287,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
       _newMonthsController.clear();
       _newDiscountController.clear();
+      _hasUnsavedChanges = true;
     });
   }
 
   void _removeDiscountPackage(int months) {
     setState(() {
       _discountPackages.removeWhere((pkg) => pkg.months == months);
+      _hasUnsavedChanges = true;
     });
   }
 
@@ -294,12 +315,14 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       );
       _newSpecialtyController.clear();
+      _hasUnsavedChanges = true;
     });
   }
 
   void _removeSpecialty(int id) {
     setState(() {
       _specialties.removeWhere((s) => s.id == id);
+      _hasUnsavedChanges = true;
     });
   }
 
@@ -333,6 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _newAgeCategoryController.clear();
         _newMinAgeController.clear();
         _newMaxAgeController.clear();
+        _hasUnsavedChanges = true;
       });
     }
   }
@@ -344,6 +368,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _specialties[specialtyIndex].ageCategories.removeWhere(
               (c) => c.name == categoryName,
             );
+        _hasUnsavedChanges = true;
       });
     }
   }
@@ -362,58 +387,159 @@ class _SettingsScreenState extends State<SettingsScreen>
     _newAgeCategoryController.dispose();
     _newMinAgeController.dispose();
     _newMaxAgeController.dispose();
+    _newPartController.dispose();
     super.dispose();
   }
 
+// ==================== واجهة الإعدادات الرئيسية ====================
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('الإعدادات'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: '💰 مالي', icon: Icon(Icons.attach_money)),
-            Tab(text: '🛒 أدوات', icon: Icon(Icons.shopping_bag)),
-            Tab(text: '🏷️ تخفيضات', icon: Icon(Icons.local_offer)),
-            Tab(text: '🥋 رياضة', icon: Icon(Icons.sports_martial_arts)),
-            Tab(text: '🏢 تنظيمي', icon: Icon(Icons.business)), // ✅ تبويب جديد
-            Tab(
-                text: '🔔 تنبيهات',
-                icon: Icon(Icons.notifications_active)), // ✅ جديد
+// ==================== حفظ مع نافذة تأكيد ====================
+    Future<void> _saveSettingsWithConfirm() async {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('تأكيد الحفظ'),
+          content:
+              const Text('هل أنت متأكد من حفظ جميع التغييرات في الإعدادات؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+              ),
+              child: const Text('حفظ'),
+            ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _saveSettings,
-            tooltip: 'حفظ',
+      );
+
+      if (confirm == true) {
+        await _saveSettings();
+      }
+    }
+
+    return WillPopScope(
+      onWillPop: () async {
+        // ✅ التحقق من وجود تغييرات غير محفوظة
+        if (_hasUnsavedChanges) {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: const Text('تغييرات غير محفوظة'),
+              content: const Text(
+                  'لديك تغييرات غير محفوظة. هل تريد الخروج دون حفظ؟'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('البقاء'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                  ),
+                  child: const Text('الخروج دون حفظ'),
+                ),
+              ],
+            ),
+          );
+          return confirm ?? false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('الإعدادات'),
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          actions: [
+            // ✅ زر حفظ واحد
+            TextButton.icon(
+              onPressed: _saveSettingsWithConfirm,
+              icon: const Icon(Icons.save, color: Color(0xFFE53935), size: 20),
+              label: const Text(
+                'حفظ',
+                style: TextStyle(
+                  color: Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        body: DefaultTabController(
+          length: 7,
+          child: Column(
+            children: [
+              // ✅ تبويبات محسّنة
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: TabBar(
+                  isScrollable: true,
+                  indicatorColor: const Color(0xFFE53935),
+                  indicatorWeight: 3,
+                  labelColor: const Color(0xFFE53935),
+                  unselectedLabelColor: Colors.grey[600],
+                  labelStyle: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600),
+                  tabs: [
+                    _buildTab('مالي', Icons.attach_money),
+                    _buildTab('أدوات', Icons.shopping_bag),
+                    _buildTab('تخفيضات', Icons.local_offer),
+                    _buildTab('رياضة', Icons.sports_martial_arts),
+                    _buildTab('تنظيمي', Icons.business),
+                    _buildTab('تنبيهات', Icons.notifications_active),
+                    _buildTab('أجزاء الحصة', Icons.fitness_center),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildFinancialTab(),
+                    _buildSportsItemsTab(),
+                    _buildDiscountsTab(),
+                    _buildSportsSettingsTab(),
+                    _buildOrganizationalTab(),
+                    _buildNotificationsTab(),
+                    _buildSessionPartsTab(),
+                  ],
+                ),
+              ),
+            ],
           ),
-          Text("حفظ الجميع"),
-        ],
+        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+    );
+  }
+
+  Widget _buildTab(String label, IconData icon) {
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // تبويب 1: الإعدادات المالية
-          _buildFinancialTab(),
-
-          // تبويب 2: الأدوات الرياضية
-          _buildSportsItemsTab(),
-
-          // تبويب 3: تخفيضات الدفع المسبق
-          _buildDiscountsTab(),
-
-          // تبويب 4: الاختصاصات والفئات العمرية
-          _buildSportsSettingsTab(),
-
-          _buildOrganizationalTab(), // ✅ تبويب القاعات والأفواج
-
-          _buildNotificationsTab(), // ✅ إضافة التبويب الجديد
+          Icon(icon, size: 16),
+          const SizedBox(width: 4),
+          Text(label),
         ],
       ),
     );
@@ -815,6 +941,70 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+// إضافة تبويب أو قسم جديد
+  Widget _buildSessionPartsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(
+          title: 'أجزاء الحصة التدريبية',
+          icon: Icons.fitness_center,
+          children: [
+            ..._sessionParts.map((part) => ListTile(
+                  leading: const Icon(Icons.drag_handle, color: Colors.grey),
+                  title: Text(part),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () {
+                      setState(() {
+                        _sessionParts.remove(part);
+                        _hasUnsavedChanges = true;
+                      });
+                    },
+                  ),
+                )),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newPartController,
+                    decoration: const InputDecoration(
+                      hintText: 'اسم الجزء الجديد',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    if (_newPartController.text.trim().isNotEmpty) {
+                      setState(() {
+                        _sessionParts.add(_newPartController.text.trim());
+                        _newPartController.clear();
+                        _hasUnsavedChanges = true;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.add_circle, color: Color(0xFFE53935)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _saveSettings,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              child: const Text('حفظ الإعدادات'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
 // ==================== عنصر إعداد التنبيه ====================
   Widget _buildNotificationSetting({
     required String title,
@@ -941,6 +1131,12 @@ class _SettingsScreenState extends State<SettingsScreen>
   // إضافة قاعة جديدة
   // إضافة قاعة جديدة
   Future<void> _addHall() async {
+    // ✅ التحقق من وجود قاعات مسبقة
+    if (_halls.isNotEmpty) {
+      CustomSnackbar.showWarning(context, 'لا يمكن إضافة أكثر من قاعة واحدة');
+      return;
+    }
+
     final nameController = TextEditingController();
     final addressController = TextEditingController();
     final phoneController = TextEditingController();
@@ -1451,12 +1647,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildOrganizationalTab() {
     return RefreshIndicator(
-      onRefresh: () async {
-        await _loadHalls(); // ✅ إعادة تحميل عند السحب للأسفل
-      },
+      onRefresh: _loadHalls,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1470,12 +1664,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
-                // زر إضافة قاعة
-                FloatingActionButton.small(
-                  onPressed: _addHall,
-                  backgroundColor: const Color(0xFFE53935),
-                  child: const Icon(Icons.add, color: Colors.white),
-                ),
+                // ✅ زر إضافة قاعة (يظهر فقط إذا كانت القاعات فارغة)
+                if (_halls.isEmpty)
+                  FloatingActionButton.small(
+                    onPressed: _addHall,
+                    backgroundColor: const Color(0xFFE53935),
+                    child: const Icon(Icons.add, color: Colors.white),
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -1487,11 +1682,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 alignment: Alignment.center,
                 child: Column(
                   children: [
-                    Icon(
-                      Icons.business_outlined,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
+                    Icon(Icons.business_outlined,
+                        size: 64, color: Colors.grey[400]),
                     const SizedBox(height: 16),
                     Text(
                       'لا توجد قاعات',
@@ -1506,15 +1698,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               )
             else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _halls.length,
-                itemBuilder: (context, index) {
-                  final hall = _halls[index];
-                  return _buildHallCard(hall);
-                },
-              ),
+              // ✅ عرض القاعة الواحدة بدون زر إضافة
+              _buildHallCard(_halls.first),
           ],
         ),
       ),
@@ -2012,6 +2197,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         return const Center(child: CircularProgressIndicator());
                       }
                       final sessions = snapshot.data!;
+
                       if (sessions.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.all(16),

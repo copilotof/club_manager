@@ -59,6 +59,16 @@ class PaymentRepository implements IPaymentRepository {
   Future<void> addPayment(PaymentModel payment) async {
     final db = await _db;
     final id = await db.insert('payments', payment.toMap());
+
+    // ✅ حذف إشعارات الدفع المتأخر لهذا الطالب
+    await db.delete(
+      'notifications',
+      where: 'type = ? AND student_id = ? AND is_read = 0',
+      whereArgs: ['payment', payment.studentId],
+    );
+
+    print('✅ تم حذف إشعارات الدفع للطالب ${payment.studentId}');
+
     print(
       '💰 PaymentRepository: تم إدراج دفعة جديدة - id=$id, student_id=${payment.studentId}, amount=${payment.amount}',
     );
@@ -124,30 +134,40 @@ class PaymentRepository implements IPaymentRepository {
   }) async {
     final db = await _db;
 
-    // بناء الاستعلام يدوياً لتجنب مشاكل الأعمدة
+    // جلب تاريخ تسجيل الطالب
+    final studentResult = await db.query(
+      'students',
+      where: 'id = ?',
+      whereArgs: [studentId],
+    );
+
+    if (studentResult.isEmpty) return 0;
+    final enrollmentDate =
+        DateTime.parse(studentResult.first['enrollment_date'] as String);
+    final enrollmentMonth = enrollmentDate.month;
+    final enrollmentYear = enrollmentDate.year;
+
+    // إذا كان الشهر المستهدف قبل تاريخ التسجيل، لا يتم احتسابه
+    if (targetYear != null && targetMonth != null) {
+      if (targetYear < enrollmentYear ||
+          (targetYear == enrollmentYear && targetMonth < enrollmentMonth)) {
+        return 0;
+      }
+    }
+
+    // ✅ بناء الاستعلام بشكل صحيح
     String query =
         'SELECT SUM(amount) as total FROM payments WHERE student_id = ? AND payment_type = ?';
     List<Object?> args = [studentId, paymentType];
 
     if (targetMonth != null) {
-      // التحقق من وجود العمود target_month
-      try {
-        query += ' AND target_month = ?';
-        args.add(targetMonth);
-      } catch (e) {
-        print('⚠️ عمود target_month غير موجود: $e');
-      }
+      query += ' AND target_month = ?';
+      args.add(targetMonth);
     }
 
     if (targetYear != null) {
-      // استخدام year بدلاً من target_year إذا كان العمود غير موجود
-      try {
-        query += ' AND target_year = ?';
-        args.add(targetYear);
-      } catch (e) {
-        print('⚠️ عمود target_year غير موجود، استخدام year بدلاً منه');
-        query += ' AND year = ?';
-      }
+      query += ' AND target_year = ?';
+      args.add(targetYear);
     }
 
     try {

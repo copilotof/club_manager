@@ -167,6 +167,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'Fight Club Manager',
+      debugShowCheckedModeBanner: false,
       locale: const Locale('ar', 'DZ'),
       theme: ThemeData(
         brightness: Brightness.light,

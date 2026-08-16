@@ -56,6 +56,10 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   final _doctorNameController = TextEditingController();
   final _emergencyPhoneController = TextEditingController();
 
+  // ✅ التأكد من أن _enrollmentDate مُعرّف
+  DateTime _enrollmentDate = DateTime.now();
+  final _enrollmentDateController = TextEditingController();
+
   // ==================== للقاعات والأفواج ====================
   // المتغيرات
   List<HallModel> _halls = [];
@@ -73,6 +77,9 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
     _studentBloc = StudentBloc(getIt());
     _tabController = TabController(length: 3, vsync: this);
 
+    _enrollmentDate = widget.student?.enrollmentDate ?? DateTime.now();
+    _enrollmentDateController.text = _formatDate(_enrollmentDate);
+
     // تحميل القاعات (والأفواج تلقائياً)
     _loadHalls();
 
@@ -84,12 +91,22 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
 
   void _fillFormWithStudentData() async {
     final s = widget.student!;
+
+    // ✅ طباعة تاريخ التسجيل من قاعدة البيانات
+    print('📅 تاريخ التسجيل من قاعدة البيانات: ${s.enrollmentDate}');
+
     _firstNameController.text = s.firstName;
     _lastNameController.text = s.lastName;
     _selectedDate = s.birthDate;
     _birthDateController.text = _formatDate(s.birthDate);
     _gender = s.gender;
     _parentPhoneController.text = s.parentPhone ?? '';
+
+    _enrollmentDate = s.enrollmentDate;
+    _enrollmentDateController.text = _formatDate(s.enrollmentDate);
+
+// ✅ طباعة تاريخ التسجيل بعد التعيين
+    print('📅 تاريخ التسجيل بعد التعيين: $_enrollmentDate');
 
     // ✅ تعيين القاعة إذا كانت موجودة
     if (s.hallId != null) {
@@ -241,7 +258,7 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
   }
 
   // ✅ دالة الحفظ المحسنة (تمنع الضغط المتكرر)
-  void _saveStudent() async {
+  Future<void> _saveStudent() async {
     // منع الضغط إذا كان جاري الحفظ
     if (_isSaving) return;
 
@@ -259,6 +276,9 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
       return;
     }
 
+// ✅ طباعة تاريخ التسجيل قبل الحفظ
+    print('📅 تاريخ التسجيل قبل الحفظ: $_enrollmentDate');
+
     // تفعيل حالة الحفظ
     setState(() {
       _isSaving = true;
@@ -273,7 +293,8 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
       parentPhone: _parentPhoneController.text.isEmpty
           ? null
           : _parentPhoneController.text,
-      enrollmentDate: widget.student?.enrollmentDate ?? DateTime.now(),
+      enrollmentDate:
+          _enrollmentDate, //widget.student?.enrollmentDate ?? DateTime.now(),
       hallId: _selectedHallId, // ✅ حفظ القاعة
       groupId: _selectedGroupId, // ✅ حفظ الفوج
       semester1Grade: _semester1Controller.text.isEmpty
@@ -305,6 +326,9 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
           ? null
           : _emergencyPhoneController.text,
     );
+
+    // ✅ طباعة الطالب قبل الحفظ
+    print('📋 بيانات الطالب: ${student.toMap()}');
 
     if (widget.student == null) {
       _studentBloc.add(AddStudentEvent(student));
@@ -455,6 +479,24 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
             keyboardType: TextInputType.phone,
           ),
 
+          // تاريخ التسجيل
+          const SizedBox(height: 16),
+          const Text('تاريخ التسجيل',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+
+          InkWell(
+            onTap: () => _selectEnrollmentDate(),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: const Icon(Icons.calendar_today),
+              ),
+              child: Text(_formatDate(_enrollmentDate)),
+            ),
+          ),
+
           // ==================== اختيار القاعة ====================
           const Text('القاعة', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -519,6 +561,31 @@ class _AddEditStudentScreenState extends State<AddEditStudentScreen>
               onChanged: _onGroupChanged,
             ),
         ],
+      ),
+    );
+  }
+
+// دالة اختيار تاريخ التسجيل
+// استبدل دالة _selectEnrollmentDate بهذا:
+  Future<void> _selectEnrollmentDate() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SizedBox(
+        height: 280,
+        child: CupertinoDatePicker(
+          mode: CupertinoDatePickerMode.date,
+          initialDateTime: _enrollmentDate,
+          maximumDate: DateTime.now(),
+          minimumDate: DateTime(2020),
+          onDateTimeChanged: (DateTime newDate) {
+            setState(() {
+              _enrollmentDate = newDate;
+              _enrollmentDateController.text = _formatDate(newDate);
+              // ✅ طباعة التاريخ الجديد
+              print('📅 تاريخ التسجيل الجديد: $_enrollmentDate');
+            });
+          },
+        ),
       ),
     );
   }
