@@ -70,6 +70,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // بيانات الحصة الاستثنائية
   ExtraSessionModel? _extraSession;
 
+  // ✅ القاعة المختارة تلقائياً (القاعة الأولى والوحيدة)
+  int? _autoSelectedHallId;
+
   // ==================== مفتاح الماسح الضوئي ====================
   final GlobalKey<QRScannerScreenState> _qrScannerKey =
       GlobalKey<QRScannerScreenState>();
@@ -185,6 +188,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   // ==================== تحميل جميع البيانات ====================
+// ==================== تحميل جميع البيانات ====================
   Future<void> _loadAllData() async {
     setState(() {
       _isLoading = true;
@@ -204,6 +208,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         });
         return;
       }
+
+      // ✅ تعيين القاعة الأولى (الوحيدة) تلقائياً
+      _autoSelectedHallId = _halls.first.id;
+      _selectedHallId = _autoSelectedHallId;
+      print(
+          '🏛️ تم تحديد القاعة تلقائياً: ${_halls.first.name} (ID: ${_halls.first.id})');
+
+      // ✅ تحميل الأفواج لهذه القاعة
+      await _loadGroups(_selectedHallId!);
 
       await _findSessionsByDate();
 
@@ -244,23 +257,34 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       List<SessionWithDetails> foundSessions = [];
 
-      // 1. البحث عن الحصص العادية
-      for (var hall in _halls) {
-        final groups = await _groupRepo.getGroupsByHall(hall.id!);
+      // ✅ استخدام القاعة المحددة تلقائياً
+      final hallId =
+          _autoSelectedHallId ?? (_halls.isNotEmpty ? _halls.first.id : null);
+      if (hallId == null) {
+        setState(() {
+          _hasSessions = false;
+          _message = '⚠️ لا توجد قاعة محددة';
+          _isLoadingData = false;
+          _isLoading = false;
+        });
+        return;
+      }
 
-        for (var group in groups) {
-          final sessions = await _groupRepo.getSessionsByGroup(group.id!);
-          final daySessions =
-              sessions.where((s) => s.dayOfWeek == targetDay).toList();
+      // 1. البحث عن الحصص العادية في القاعة المحددة
+      final groups = await _groupRepo.getGroupsByHall(hallId);
 
-          for (var session in daySessions) {
-            foundSessions.add(SessionWithDetails(
-              hall: hall,
-              group: group,
-              session: session,
-              isExtra: false,
-            ));
-          }
+      for (var group in groups) {
+        final sessions = await _groupRepo.getSessionsByGroup(group.id!);
+        final daySessions =
+            sessions.where((s) => s.dayOfWeek == targetDay).toList();
+
+        for (var session in daySessions) {
+          foundSessions.add(SessionWithDetails(
+            hall: _halls.firstWhere((h) => h.id == hallId),
+            group: group,
+            session: session,
+            isExtra: false,
+          ));
         }
       }
 
@@ -426,10 +450,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  // ==================== تحميل الأفواج ====================
+// ==================== تحميل الأفواج ====================
   Future<void> _loadGroups(int hallId) async {
     try {
       _groups = await _groupRepo.getGroupsByHall(hallId);
+      print('📊 تم جلب ${_groups.length} فوج للقاعة $hallId');
       setState(() {});
     } catch (e) {
       print('❌ خطأ في تحميل الأفواج: $e');
@@ -438,6 +463,66 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   // ==================== تحميل الحصص ====================
   Future<void> _loadSessionsForGroup(int groupId) async {
+    try {
+      final allSessions = await _groupRepo.getSessionsByGroup(groupId);
+
+      // تصفية الحصص حسب اليوم المختار
+      final selectedWeekday = _selectedDate.weekday;
+      final sessionDayMap = {7: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6};
+      final targetDay = sessionDayMap[selectedWeekday] ?? 0;
+
+      final daySessions =
+          allSessions.where((s) => s.dayOfWeek == targetDay).toList();
+
+      // ✅ إضافة الحصص الاستثنائية
+      try {
+        final db = await getIt<AppDatabase>().database;
+        final dateStr =
+            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+
+        final extraResult = await db.query(
+          'extra_sessions',
+          where: 'date = ? AND group_id = ?',
+          whereArgs: [dateStr, groupId],
+        );
+
+        for (var row in extraResult) {
+          final extra = ExtraSessionModel.fromMap(row);
+          final tempSession = SessionModel(
+            id: extra.id!,
+            groupId: extra.groupId,
+            dayOfWeek: targetDay,
+            startTime: extra.startTime,
+            endTime: extra.endTime,
+          );
+          daySessions.add(tempSession);
+        }
+      } catch (e) {
+        print('⚠️ خطأ في جلب الحصص الاستثنائية: $e');
+      }
+
+      setState(() {
+        _sessions = daySessions;
+      });
+
+      // ✅ اختيار الحصة الأولى تلقائياً
+      if (_sessions.isNotEmpty) {
+        setState(() {
+          _selectedSessionId = _sessions.first.id;
+        });
+        await _loadAttendance(groupId);
+      } else {
+        setState(() {
+          _selectedSessionId = null;
+          _message = '📅 لا توجد حصص تدريبية في هذا اليوم لهذا الفوج';
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل الحصص: $e');
+    }
+  }
+
+/*   Future<void> _loadSessionsForGroup(int groupId) async {
     try {
       // جلب الحصص العادية
       final regularSessions = await _groupRepo.getSessionsByGroup(groupId);
@@ -453,19 +538,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       print('❌ خطأ في تحميل الحصص: $e');
     }
   }
-
-  // ==================== تحميل الحضور ====================
+ */
   Future<void> _loadAttendance(int groupId) async {
+    if (_selectedSessionId == null) {
+      print('⚠️ _selectedSessionId == null');
+      setState(() {
+        _isLoadingData = false;
+      });
+      return;
+    }
+
     setState(() {
       _isLoadingData = true;
     });
 
     try {
-      _students = await _studentRepo.getStudentsByGroup(groupId);
+      print('📊 تحميل الحضور: groupId=$groupId, sessionId=$_selectedSessionId');
 
-      final records = await _attendanceRepo.getAttendanceForGroup(
-        groupId: groupId,
-        date: _selectedDate,
+      // ✅ جلب طلاب الفوج
+      _students = await _studentRepo.getStudentsByGroup(groupId);
+      print('📊 تم جلب ${_students.length} طالب');
+
+      // ✅ جلب الحضور للحصة
+      final records = await _attendanceRepo.getAttendanceForSession(
+        sessionId: _selectedSessionId!,
+        groupId: groupId, // ✅ تمرير groupId
       );
 
       _records = _students.map((student) {
@@ -473,18 +570,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           (r) => r.studentId == student.id,
           orElse: () => AttendanceRecord(
             studentId: student.id!,
+            sessionId: _selectedSessionId!,
             studentName: student.firstName,
             studentLastName: student.lastName,
-            beltColor: null,
+            sessionDate: _selectedDate,
             isPresent: false,
             wasAutoGenerated: true,
-            sessionDate: _selectedDate,
             markedAt: null,
             excuseReason: null,
           ),
         );
         return existing;
       }).toList();
+
+      print('📊 تم إنشاء ${_records.length} سجل حضور');
     } catch (e) {
       print('❌ خطأ في تحميل الحضور: $e');
     } finally {
@@ -1221,16 +1320,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _onGroupChanged(int? groupId) async {
     if (groupId == null) return;
+
     setState(() {
       _selectedGroupId = groupId;
       _selectedSessionId = null;
-      _sessions = [];
       _students = [];
       _records = [];
     });
-    // ✅ تحميل الحصص الخاصة باليوم المختار فقط
-    await _loadSessionsForGroupWithDate(groupId, _selectedDate);
-    // await _loadSessionsForGroup(groupId);
+
+    // تحميل الحصص لهذا الفوج
+    await _loadSessionsForGroup(groupId);
   }
 
 // ✅ دالة جديدة لتحميل الحصص حسب التاريخ
@@ -1437,29 +1536,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         title: const Text('تسجيل الحضور'),
         actions: [
-/*           Tooltip(
-            message: 'إضافة ملاحظات للحصة',
-            child: IconButton(
-              icon: const Icon(Icons.note_add),
-              onPressed: () {
-                if (_selectedSessionId != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CoachNotesScreen(
-                        sessionId: _selectedSessionId!,
-                        sessionDate: _selectedDate,
-                      ),
-                    ),
-                  );
-                } else {
-                  CustomSnackbar.showWarning(
-                      context, 'الرجاء اختيار حصة تدريبية أولاً');
-                }
-              },
-            ),
-          ),
- */
           InkWell(
             onTap: () {
               if (_selectedSessionId != null) {
@@ -1497,14 +1573,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
           ),
 
-/*           Tooltip(
-            message: 'عرض ملاحظات الحصة',
-            child: IconButton(
-              icon: const Icon(Icons.note_outlined),
-              onPressed: _viewCoachNotes,
-            ),
-          ),
- */
           Container(
             width: 1,
             height: 28,
@@ -1742,7 +1810,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                   // ==================== إذا كان هناك حصص ====================
                   if (_hasSessions) ...[
-                    // اختيار القاعة
+/*                     // اختيار القاعة
                     const Text('القاعة',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
@@ -1765,8 +1833,35 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       }).toList(),
                       onChanged: _isFieldsDisabled ? null : _onHallChanged,
                     ),
-                    const SizedBox(height: 12),
-
+                  
+                    const SizedBox(height: 12), */
+// ✅ القاعة محددة تلقائياً (عرض ثابت فقط)
+                    if (_autoSelectedHallId != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.business,
+                                size: 18, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(
+                              'القاعة: ${_halls.firstWhere(
+                                    (h) => h.id == _autoSelectedHallId,
+                                    orElse: () => HallModel(
+                                        id: _autoSelectedHallId!,
+                                        name: 'غير معروفة'),
+                                  ).name}',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     // اختيار الفوج
                     const Text('الفوج',
                         style: TextStyle(fontWeight: FontWeight.bold)),

@@ -696,7 +696,13 @@ class _CoachNotesScreenState extends State<CoachNotesScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('حفظ الملاحظات'),
+                    : const Text(
+                        'حفظ الملاحظات',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white),
+                      ),
               ),
             ),
           ],

@@ -604,6 +604,10 @@ class _AddCompetitionScreenState extends State<AddCompetitionScreen> {
               ),
               child: Text(
                 widget.competition == null ? 'إضافة البطولة' : 'تحديث البطولة',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white),
               ),
             ),
           ],

@@ -19,7 +19,7 @@ class AppDatabase {
 
     final db = await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -99,6 +99,7 @@ class AppDatabase {
       CREATE TABLE attendances (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
+        session_id INTEGER NOT NULL,
         session_date TEXT NOT NULL,
         is_present INTEGER DEFAULT 0,
         was_auto_generated INTEGER DEFAULT 1,
@@ -441,6 +442,16 @@ class AppDatabase {
         print('✅ تم إنشاء جدول notifications');
       } catch (e) {
         print('⚠️ خطأ في إنشاء جدول notifications: $e');
+      }
+    }
+    if (oldVersion < 8) {
+      try {
+        // ✅ إضافة عمود session_id إلى جدول attendances
+        await db
+            .execute('ALTER TABLE attendances ADD COLUMN session_id INTEGER');
+        print('✅ تم إضافة عمود session_id إلى جدول attendances');
+      } catch (e) {
+        print('⚠️ خطأ في إضافة عمود session_id: $e');
       }
     }
   }

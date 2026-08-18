@@ -1,6 +1,7 @@
 // lib/data/models/attendance_record.dart
 class AttendanceRecord {
   final int studentId;
+  final int sessionId;
   final String studentName;
   final String studentLastName;
   final String? beltColor;
@@ -14,6 +15,7 @@ class AttendanceRecord {
 
   AttendanceRecord({
     required this.studentId,
+    required this.sessionId,
     required this.studentName,
     required this.studentLastName,
     required this.sessionDate,
@@ -27,6 +29,7 @@ class AttendanceRecord {
   Map<String, dynamic> toMap() {
     return {
       'student_id': studentId,
+      'session_id': sessionId,
       'student_name': studentName,
       'student_last_name': studentLastName,
       'belt_color': beltColor,
@@ -40,6 +43,7 @@ class AttendanceRecord {
   factory AttendanceRecord.fromMap(Map<String, dynamic> map) {
     return AttendanceRecord(
       studentId: map['student_id'],
+      sessionId: map['session_id'],
       studentName: map['student_name'],
       studentLastName: map['student_last_name'],
       beltColor: map['belt_color'],

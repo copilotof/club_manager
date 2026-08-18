@@ -89,63 +89,6 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     }
   }
 
-  // حساب المتأخرات (السنة الحالية من الشهر 1 إلى الشهر الحالي)
-/*   Future<void> _calculateDebtors() async {
-    final currentMonth = DateTime.now().month;
-    List<Map<String, dynamic>> debtors = [];
-
-    for (var student in _students) {
-      double totalOutstanding = 0;
-
-      // حساب الاشتراكات الشهرية من تاريخ التسجيل
-      final enrollmentMonth = student.enrollmentDate.month;
-      final enrollmentYear = student.enrollmentDate.year;
-
-      for (int month = enrollmentMonth; month <= currentMonth; month++) {
-        int actualYear = enrollmentYear;
-        int actualMonth = month;
-        if (month > 12) {
-          actualMonth = month - 12;
-          actualYear++;
-        }
-
-        final paid = await _paymentRepo.getTotalPaidForTarget(
-          studentId: student.id!,
-          paymentType: 'monthly',
-          targetMonth: actualMonth,
-          targetYear: actualYear,
-        );
-        if (paid < _monthlyFee) {
-          totalOutstanding += (_monthlyFee - paid);
-        }
-      }
-
-      // حساب التأمين
-      final insurancePaid = await _paymentRepo.getTotalPaidForTarget(
-        studentId: student.id!,
-        paymentType: 'insurance',
-        targetYear: _selectedYear,
-      );
-      if (insurancePaid < _insuranceFee) {
-        totalOutstanding += (_insuranceFee - insurancePaid);
-      }
-
-      if (totalOutstanding > 0) {
-        debtors.add({
-          'student': student,
-          'amount': totalOutstanding,
-        });
-      }
-    }
-
-    debtors.sort(
-        (a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
-
-    setState(() {
-      _debtors = debtors;
-    });
-  }
- */
   Future<void> _calculateDebtors() async {
     List<Map<String, dynamic>> debtors = [];
 
@@ -247,7 +190,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
   }
 
   // حساب إجمالي المتأخرات
-  Future<double> getTotalOutstanding() async {
+/*   Future<double> getTotalOutstanding() async {
     double total = 0;
     for (var student in _students) {
       for (int month = 1; month <= DateTime.now().month; month++) {
@@ -272,6 +215,52 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     }
     return total;
   }
+ */
+
+  // ==================== حساب إجمالي المتأخرات (لجميع الطلاب) ====================
+  Future<double> getTotalOutstanding() async {
+    double total = 0;
+
+    for (var student in _students) {
+      // ✅ حساب متأخرات الطالب من تاريخ التسجيل
+      final enrollmentDate = student.enrollmentDate;
+      final now = DateTime.now();
+
+      for (int year = enrollmentDate.year; year <= now.year; year++) {
+        int endMonth = (year == now.year) ? now.month : 12;
+        int startMonth =
+            (year == enrollmentDate.year) ? enrollmentDate.month : 1;
+
+        for (int month = startMonth; month <= endMonth; month++) {
+          final paid = await _paymentRepo.getTotalPaidForTarget(
+            studentId: student.id!,
+            paymentType: 'monthly',
+            targetMonth: month,
+            targetYear: year,
+          );
+          if (paid < _monthlyFee) {
+            total += (_monthlyFee - paid);
+          }
+        }
+      }
+
+      // ✅ حساب التأمين للسنة الحالية
+      final insurancePaid = await _paymentRepo.getTotalPaidForTarget(
+        studentId: student.id!,
+        paymentType: 'insurance',
+        targetYear: now.year,
+      );
+      if (insurancePaid < _insuranceFee) {
+        total += (_insuranceFee - insurancePaid);
+      }
+
+      // ✅ مستحقات إضافية غير مكتملة
+      final extraDebts = await _calculateExtraDebts(student.id!);
+      total += extraDebts;
+    }
+
+    return total;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -283,9 +272,9 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('لوحة المعلومات المالية'),
+        title: const Text('المعلومات المالية'),
         actions: [
-          // اختيار السنة
+/*           // اختيار السنة
           Container(
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -315,7 +304,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               ),
             ),
           ),
-
+ */
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
       ),
@@ -512,7 +501,8 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             subtitle:
-                Text('متأخرات $_selectedYear: ${amount.toStringAsFixed(0)} دج'),
+                //   Text('متأخرات $_selectedYear: ${amount.toStringAsFixed(0)} دج'),
+                Text('متأخرات : ${amount.toStringAsFixed(0)} دج'),
             trailing: IconButton(
               icon: const Icon(Icons.arrow_forward_ios, color: Colors.blue),
               onPressed: () => _showDebtorDialog(student),
